@@ -1,6 +1,7 @@
+import type { ComponentProps } from 'react';
 import { Toaster as Sonner } from 'sonner';
 
-export const Toaster = ({ ...props }: React.ComponentProps<typeof Sonner>) => (
+export const Toaster = ({ ...props }: ComponentProps<typeof Sonner>) => (
   <Sonner
     theme="dark"
     className="toaster group"

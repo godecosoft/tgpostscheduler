@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +18,7 @@ export function TemplatesTab({ templates, onChanged }: Props) {
   const [form, setForm] = useState({ name: '', text: '' });
   const [busy, setBusy] = useState(false);
 
-  async function add(e: React.FormEvent) {
+  async function add(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
