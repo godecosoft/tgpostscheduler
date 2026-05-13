@@ -390,14 +390,16 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
             <div className="space-y-2">
               <Label>Tekrar</Label>
               <Select
-                value={draft.recurring}
-                onValueChange={(v) => update('recurring', v as ComposeDraft['recurring'])}
+                value={draft.recurring || 'none'}
+                onValueChange={(v) =>
+                  update('recurring', (v === 'none' ? '' : v) as ComposeDraft['recurring'])
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Tek seferlik" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Tek seferlik</SelectItem>
+                  <SelectItem value="none">Tek seferlik</SelectItem>
                   <SelectItem value="hourly">Her saat</SelectItem>
                   <SelectItem value="daily">Her gün</SelectItem>
                   <SelectItem value="weekly">Her hafta</SelectItem>
