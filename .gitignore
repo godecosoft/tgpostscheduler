@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+data/
+uploads/
+*.log
+.DS_Store
+
+# Frontend build artifacts
+web/dist/
+web/node_modules/
+
+# Editor
+.vscode/
+.idea/

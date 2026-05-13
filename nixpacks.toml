@@ -1,0 +1,17 @@
+# Railway / Nixpacks build configuration
+# https://nixpacks.com/docs/configuration/file
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "python3", "gcc"]
+
+[phases.install]
+cmds = ["npm install --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build:web"]
+
+[start]
+cmd = "node src/server.js"
+
+[variables]
+NODE_ENV = "production"
