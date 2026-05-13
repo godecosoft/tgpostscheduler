@@ -42,16 +42,73 @@ function init() {
     }
   });
 
-  // /start ve /id komutları — kanal/grup chat_id öğrenmek için
-  bot.onText(/\/(start|id)/, (msg) => {
-    bot.sendMessage(
-      msg.chat.id,
-      `Chat ID: <code>${msg.chat.id}</code>\nTür: ${msg.chat.type}\nİsim: ${msg.chat.title || msg.chat.username || '-'}`,
-      { parse_mode: 'HTML' },
-    );
+  // /start ve /id komutları — bulunduğun chat'in id'sini ver
+  bot.onText(/\/(start|id|help)/, (msg) => {
+    const lines = [
+      '👋 <b>ARS Telegram Scheduler Bot</b>',
+      '',
+      `📍 Bu sohbetin Chat ID'si: <code>${msg.chat.id}</code>`,
+      `Tür: <code>${msg.chat.type}</code>`,
+      msg.chat.title ? `İsim: ${escapeHtml(msg.chat.title)}` : '',
+      '',
+      '📡 <b>Kanal chat_id öğrenmek için:</b>',
+      '1️⃣ Botu kanalına yönetici olarak ekle (otomatik kayıtlanır)',
+      '2️⃣ <b>VEYA</b> kanalından bir mesajı bana <i>ilet</i> (forward), sana ID\'sini yazayım',
+    ].filter(Boolean).join('\n');
+    bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
+  });
+
+  // İletilen (forwarded) mesajları yakala — kaynak kanalın chat_id'sini ver
+  bot.on('message', (msg) => {
+    // Komut ise atla — yukarıda zaten işlendi
+    if (msg.text && /^\/(start|id|help)\b/.test(msg.text)) return;
+
+    // Bot API'nin eski (forward_from_chat) ve yeni (forward_origin) alanlarını kontrol et
+    const fwdChat = msg.forward_from_chat || msg.forward_origin?.chat || null;
+    const fwdUser = msg.forward_from || msg.forward_origin?.sender_user || null;
+
+    if (fwdChat) {
+      const lines = [
+        '✅ <b>İletilen mesajın kaynağı bulundu</b>',
+        '',
+        `📡 Chat ID: <code>${fwdChat.id}</code>`,
+        `Tür: <code>${fwdChat.type}</code>`,
+        fwdChat.title ? `İsim: ${escapeHtml(fwdChat.title)}` : '',
+        fwdChat.username ? `Kullanıcı adı: @${fwdChat.username}` : '',
+        '',
+        '👉 Bu ID\'yi web panelde "Kanallar → Yeni Kanal" ekranına yapıştırabilirsin.',
+        '',
+        '<i>Not: Botu da kanalın yöneticisi olarak eklemeyi unutma — yoksa mesaj gönderemez.</i>',
+      ].filter(Boolean).join('\n');
+      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
+      return;
+    }
+
+    if (fwdUser && msg.chat.type === 'private') {
+      bot.sendMessage(
+        msg.chat.id,
+        `👤 İletilen mesaj bir kullanıcıdan: <code>${fwdUser.id}</code>\n\nKanal chat_id öğrenmek istiyorsan, kanaldaki bir mesajı bana ilet.`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // Özel sohbette herhangi bir mesaj geldiyse (forward değil) yardımcı yönlendirme
+    if (msg.chat.type === 'private' && msg.text && !msg.text.startsWith('/')) {
+      bot.sendMessage(
+        msg.chat.id,
+        '💡 Kanal ID\'si öğrenmek için kanalından <b>bir mesajı bana ilet (forward)</b>.\nBulunduğun sohbetin ID\'sini görmek için /id yaz.',
+        { parse_mode: 'HTML' },
+      );
+    }
   });
 
   return bot;
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function getBot() {
