@@ -54,6 +54,9 @@ function init() {
       '📡 <b>Kanal chat_id öğrenmek için:</b>',
       '1️⃣ Botu kanalına yönetici olarak ekle (otomatik kayıtlanır)',
       '2️⃣ <b>VEYA</b> kanalından bir mesajı bana <i>ilet</i> (forward), sana ID\'sini yazayım',
+      '',
+      '✨ <b>Premium Emoji ID öğrenmek için:</b>',
+      'Custom emoji içeren bir mesajı bana yaz/ilet, içindeki emoji ID\'lerini sana çıkarayım.',
     ].filter(Boolean).join('\n');
     bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
   });
@@ -61,7 +64,34 @@ function init() {
   // İletilen (forwarded) mesajları yakala — kaynak kanalın chat_id'sini ver
   bot.on('message', (msg) => {
     // Komut ise atla — yukarıda zaten işlendi
-    if (msg.text && /^\/(start|id|help)\b/.test(msg.text)) return;
+    if (msg.text && /^\/(start|id|help|emoji)\b/.test(msg.text)) return;
+
+    // Custom (premium) emoji ID'lerini çıkar — text/caption entity'lerini tara
+    const entities = msg.entities || msg.caption_entities || [];
+    const text = msg.text || msg.caption || '';
+    const customEmojis = entities
+      .filter((e) => e.type === 'custom_emoji' && e.custom_emoji_id)
+      .map((e) => ({
+        id: e.custom_emoji_id,
+        fallback: text.substring(e.offset, e.offset + e.length),
+      }));
+
+    if (customEmojis.length > 0 && msg.chat.type === 'private') {
+      const lines = [
+        `✨ <b>${customEmojis.length} adet Premium Emoji bulundu</b>`,
+        '',
+        ...customEmojis.map(
+          (ce, i) =>
+            `${i + 1}. ${ce.fallback}  <code>${ce.id}</code>\n` +
+            `   <code>&lt;tg-emoji emoji-id="${ce.id}"&gt;${escapeHtml(ce.fallback)}&lt;/tg-emoji&gt;</code>`,
+        ),
+        '',
+        '👉 Web panelde "Premium Emoji Ekle" butonuna tıklayıp ID\'yi yapıştır.',
+        '<i>Not: Premium olmayan kullanıcılar fallback (parantez içindeki standart emoji)yi görür.</i>',
+      ].join('\n');
+      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
+      return;
+    }
 
     // Bot API'nin eski (forward_from_chat) ve yeni (forward_origin) alanlarını kontrol et
     const fwdChat = msg.forward_from_chat || msg.forward_origin?.chat || null;

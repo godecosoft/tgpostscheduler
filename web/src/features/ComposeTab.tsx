@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bold, Italic, Underline, Strikethrough, Code, EyeOff, Link as LinkIcon, ImageIcon, Plus, Trash2, Send, CalendarClock, Loader2 } from 'lucide-react';
+import { Bold, Italic, Underline, Strikethrough, Code, EyeOff, Link as LinkIcon, ImageIcon, Plus, Trash2, Send, CalendarClock, Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -77,6 +77,22 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
     const sel = ta.value.slice(start, end) || 'link';
     const insert = `<a href="${url}">${sel}</a>`;
     update('text', ta.value.slice(0, start) + insert + ta.value.slice(end));
+  }
+
+  function insertPremiumEmoji() {
+    const id = prompt(
+      'Premium (Custom) Emoji ID:\n\nID öğrenmek için: bot\'a custom emoji içeren bir mesaj yaz/ilet, sana ID listesini versin.',
+    );
+    if (!id || !/^\d+$/.test(id.trim())) {
+      if (id) alert('Geçersiz ID — sadece rakam olmalı');
+      return;
+    }
+    const fallback = prompt('Fallback emoji (Premium olmayan kullanıcıların göreceği):', '✨') || '✨';
+    const ta = textRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const insert = `<tg-emoji emoji-id="${id.trim()}">${fallback}</tg-emoji>`;
+    update('text', ta.value.slice(0, start) + insert + ta.value.slice(start));
   }
 
   function insertEmoji(e: string) {
@@ -305,6 +321,16 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
                 onClick={insertLink}
               >
                 <LinkIcon className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-purple-400"
+                title="Premium (custom) Emoji ekle"
+                onClick={insertPremiumEmoji}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
               </Button>
               <Separator orientation="vertical" className="mx-1 h-5" />
               {QUICK_EMOJIS.map((e) => (

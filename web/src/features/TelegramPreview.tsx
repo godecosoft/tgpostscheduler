@@ -35,6 +35,17 @@ function renderTelegramHtml(raw: string): string {
   s = s.replace(/&lt;a\s+href=&#x27;([^&]+)&#x27;&gt;/gi, '<a href="$1" target="_blank" rel="noopener">');
   s = s.replace(/&lt;\/a&gt;/gi, '</a>');
 
+  // <tg-emoji emoji-id="..."> — premium custom emoji
+  // Preview'da fallback emoji + ✨ rozet (Telegram'da Premium kullanıcı animasyonlu görür)
+  s = s.replace(
+    /&lt;tg-emoji\s+emoji-id=&quot;(\d+)&quot;&gt;([^&]*?)&lt;\/tg-emoji&gt;/gi,
+    '<span class="tg-premium-emoji" title="Premium emoji ID: $1">$2<sup>✨</sup></span>',
+  );
+  s = s.replace(
+    /&lt;tg-emoji\s+emoji-id=&#x27;(\d+)&#x27;&gt;([^&]*?)&lt;\/tg-emoji&gt;/gi,
+    '<span class="tg-premium-emoji" title="Premium emoji ID: $1">$2<sup>✨</sup></span>',
+  );
+
   // <tg-spoiler> Telegram'da spoiler — preview'da blur efekti
   s = s.replace(/<tg-spoiler>/g, '<span class="tg-spoiler">');
   s = s.replace(/<\/tg-spoiler>/g, '</span>');
@@ -150,6 +161,19 @@ export function TelegramPreview({ channel, text, photoUrl, buttons, scheduledAt,
           overflow-x: auto;
           font-family: ui-monospace, SFMono-Regular, monospace;
           font-size: 0.92em;
+        }
+        .tg-premium-emoji {
+          position: relative;
+          display: inline-block;
+          padding: 0 1px;
+          background: linear-gradient(135deg, rgba(126, 87, 194, 0.25), rgba(33, 150, 243, 0.25));
+          border-radius: 3px;
+          cursor: help;
+        }
+        .tg-premium-emoji sup {
+          font-size: 0.55em;
+          margin-left: 1px;
+          opacity: 0.8;
         }
       `}</style>
     </div>
