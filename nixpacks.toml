@@ -1,17 +1,19 @@
 # Railway / Nixpacks build configuration
 # https://nixpacks.com/docs/configuration/file
+#
+# Önemli: NODE_ENV burada bilinçli olarak SET EDİLMİYOR.
+# Eğer set edersek `npm install` devDependencies'i (TypeScript dahil)
+# atlar ve `tsc` build sırasında bulunamaz.
+# NODE_ENV=production değerini Railway dashboard'dan runtime için ekle.
 
 [phases.setup]
 nixPkgs = ["nodejs_20", "python3", "gcc"]
 
 [phases.install]
-cmds = ["npm install --no-audit --no-fund"]
+cmds = ["npm install --include=dev --no-audit --no-fund"]
 
 [phases.build]
 cmds = ["npm run build:web"]
 
 [start]
 cmd = "node src/server.js"
-
-[variables]
-NODE_ENV = "production"
