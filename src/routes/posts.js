@@ -19,17 +19,51 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB (video için)
   fileFilter: (_req, file, cb) => {
-    if (/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) cb(null, true);
-    else cb(new Error('Sadece resim dosyası kabul edilir'));
+    // image, video, animation/gif, sticker (webp/tgs), audio, application (pdf vs.)
+    if (/^(image|video|audio)\//.test(file.mimetype) ||
+        file.mimetype === 'application/x-tgsticker' ||
+        file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Desteklenmeyen dosya türü: ' + file.mimetype));
+    }
   },
 });
 
+function detectMediaType(mimetype, filename) {
+  if (/^image\/gif$/i.test(mimetype)) return 'animation';
+  if (/^image\//i.test(mimetype)) return 'photo';
+  if (/^video\//i.test(mimetype)) return 'video';
+  if (/\.(tgs|webp)$/i.test(filename) || mimetype === 'application/x-tgsticker') return 'sticker';
+  if (/^audio\//i.test(mimetype)) return 'audio';
+  return 'document';
+}
+
 router.post('/upload', upload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Dosya yok' });
-  // DB'de sadece dosya adı saklanır; gerçek disk yolu UPLOAD_DIR ile birleştirilir
-  res.json({ path: req.file.filename, url: '/uploads/' + req.file.filename });
+  const mediaType = detectMediaType(req.file.mimetype, req.file.originalname);
+  res.json({
+    path: req.file.filename,
+    url: '/uploads/' + req.file.filename,
+    media_type: mediaType,
+    mime: req.file.mimetype,
+    size: req.file.size,
+  });
+});
+
+// Çoklu yükleme (media group için, max 10)
+router.post('/upload-multi', upload.array('files', 10), (req, res) => {
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: 'Dosya yok' });
+  const files = req.files.map((f) => ({
+    path: f.filename,
+    url: '/uploads/' + f.filename,
+    media_type: detectMediaType(f.mimetype, f.originalname),
+    mime: f.mimetype,
+    size: f.size,
+  }));
+  res.json({ files });
 });
 
 router.get('/', (req, res) => {
@@ -58,22 +92,24 @@ router.post('/', (req, res) => {
   const {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
+    media_type, media_group, cron_expression, auto_delete_minutes,
   } = req.body || {};
 
-  if (!channel_id || !text || !scheduled_at) {
-    return res.status(400).json({ error: 'channel_id, text, scheduled_at zorunlu' });
+  if (!channel_id || (!text && !photo_path && !media_group) || !scheduled_at) {
+    return res.status(400).json({ error: 'channel_id, text/medya, scheduled_at zorunlu' });
   }
   const channel = db.prepare('SELECT id FROM channels WHERE id = ?').get(channel_id);
   if (!channel) return res.status(400).json({ error: 'Kanal bulunamadı' });
 
   const result = db
     .prepare(
-      `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent, scheduled_at, recurring)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
+       scheduled_at, recurring, media_type, media_group, cron_expression, auto_delete_minutes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       channel_id,
-      text,
+      text || '',
       photo_path || null,
       buttons ? JSON.stringify(buttons) : null,
       parse_mode || 'HTML',
@@ -81,6 +117,10 @@ router.post('/', (req, res) => {
       silent ? 1 : 0,
       scheduled_at,
       recurring || null,
+      media_type || (photo_path ? 'photo' : 'text'),
+      media_group ? JSON.stringify(media_group) : null,
+      cron_expression || null,
+      auto_delete_minutes ? Number(auto_delete_minutes) : null,
     );
   res.json({ id: result.lastInsertRowid });
 });
@@ -93,11 +133,14 @@ router.put('/:id', (req, res) => {
   const {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
+    media_type, media_group, cron_expression, auto_delete_minutes,
   } = req.body || {};
 
   db.prepare(
     `UPDATE posts SET channel_id = ?, text = ?, photo_path = ?, buttons = ?, parse_mode = ?,
-     disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?, status = 'pending', error = NULL
+     disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?,
+     media_type = ?, media_group = ?, cron_expression = ?, auto_delete_minutes = ?,
+     status = 'pending', error = NULL
      WHERE id = ?`,
   ).run(
     channel_id ?? post.channel_id,
@@ -109,6 +152,10 @@ router.put('/:id', (req, res) => {
     silent ? 1 : 0,
     scheduled_at ?? post.scheduled_at,
     recurring ?? post.recurring,
+    media_type ?? post.media_type,
+    media_group ? JSON.stringify(media_group) : post.media_group,
+    cron_expression ?? post.cron_expression,
+    auto_delete_minutes != null ? Number(auto_delete_minutes) : post.auto_delete_minutes,
     req.params.id,
   );
   res.json({ ok: true });
@@ -132,10 +179,22 @@ router.post('/:id/send-now', async (req, res) => {
   try {
     const channel = { chat_id: post.channel_chat_id, name: post.channel_name };
     const result = await sendPost(post, channel);
+    const messageId = Array.isArray(result)
+      ? result[0]?.message_id || null
+      : result?.message_id || null;
+
+    let deleteAt = null;
+    if (post.auto_delete_minutes && post.auto_delete_minutes > 0) {
+      const d = new Date();
+      d.setMinutes(d.getMinutes() + post.auto_delete_minutes);
+      deleteAt = d.toISOString();
+    }
+
     db.prepare(
-      `UPDATE posts SET status = 'sent', sent_at = datetime('now'), telegram_message_id = ?, error = NULL WHERE id = ?`,
-    ).run(result.message_id || null, post.id);
-    res.json({ ok: true, message_id: result.message_id });
+      `UPDATE posts SET status = 'sent', sent_at = datetime('now'),
+       telegram_message_id = ?, error = NULL, delete_at = ? WHERE id = ?`,
+    ).run(messageId, deleteAt, post.id);
+    res.json({ ok: true, message_id: messageId });
   } catch (err) {
     db.prepare(`UPDATE posts SET status = 'failed', error = ? WHERE id = ?`).run(err.message, post.id);
     res.status(500).json({ error: err.message });

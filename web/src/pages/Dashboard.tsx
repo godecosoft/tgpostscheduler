@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen } from 'lucide-react';
+import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Channel, Post, Template } from '@/lib/types';
@@ -11,6 +11,7 @@ import { ComposeTab } from '@/features/ComposeTab';
 import { PostList } from '@/features/PostList';
 import { ChannelsTab } from '@/features/ChannelsTab';
 import { TemplatesTab } from '@/features/TemplatesTab';
+import { StatsTab } from '@/features/StatsTab';
 
 export function DashboardPage() {
   const nav = useNavigate();
@@ -87,6 +88,10 @@ export function DashboardPage() {
               <PencilLine className="h-3.5 w-3.5" />
               Gönderi Oluştur
             </TabsTrigger>
+            <TabsTrigger value="stats" className="gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />
+              İstatistikler
+            </TabsTrigger>
             <TabsTrigger value="schedule" className="gap-1.5">
               <CalendarDays className="h-3.5 w-3.5" />
               Zamanlanmış
@@ -124,6 +129,10 @@ export function DashboardPage() {
             ) : (
               <ComposeTab channels={channels} templates={templates} onSaved={refresh} />
             )}
+          </TabsContent>
+
+          <TabsContent value="stats">
+            <StatsTab />
           </TabsContent>
 
           <TabsContent value="schedule">

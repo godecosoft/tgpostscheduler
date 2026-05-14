@@ -10,7 +10,22 @@ function init() {
     console.warn('[bot] TELEGRAM_BOT_TOKEN ayarlanmamış — bot devre dışı');
     return null;
   }
-  bot = new TelegramBot(token, { polling: true });
+  // allowed_updates: reaction event'lerini almak için açıkça istemek gerek
+  bot = new TelegramBot(token, {
+    polling: {
+      params: {
+        allowed_updates: JSON.stringify([
+          'message',
+          'edited_message',
+          'channel_post',
+          'edited_channel_post',
+          'my_chat_member',
+          'message_reaction',
+          'message_reaction_count',
+        ]),
+      },
+    },
+  });
 
   bot.getMe().then((me) => {
     botInfo = me;
@@ -133,7 +148,72 @@ function init() {
     }
   });
 
+  // --- Reaction tracking (Bot API 7+) ---
+  // message_reaction_count: anonymous channel reactions için aggregate
+  bot.on('message_reaction_count', (update) => {
+    try {
+      handleReactionUpdate(update);
+    } catch (e) {
+      console.error('[bot] reaction handler hata:', e.message);
+    }
+  });
+  // message_reaction: bireysel kullanıcı reactionları (gruplar/non-anonymous)
+  bot.on('message_reaction', (update) => {
+    // Bireysel reaction'ları aggregate edip aynı handler'a yönlendir
+    try {
+      const reactions = update.new_reaction || [];
+      const counts = {};
+      for (const r of reactions) {
+        const emoji = r.emoji || (r.type === 'custom_emoji' ? `✨${r.custom_emoji_id}` : null);
+        if (emoji) counts[emoji] = (counts[emoji] || 0) + 1;
+      }
+      // Bireysel update'lerden tam aggregate elde edilemez; sadece reaction varlığını işaretle
+      // Tam sayım için message_reaction_count daha doğru
+      handleReactionUpdate({
+        chat: update.chat,
+        message_id: update.message_id,
+        reactions: Object.entries(counts).map(([type, total]) => ({ type, total_count: total })),
+      });
+    } catch (e) {
+      console.error('[bot] message_reaction hata:', e.message);
+    }
+  });
+
   return bot;
+}
+
+function handleReactionUpdate(update) {
+  const chatId = String(update.chat?.id);
+  const messageId = update.message_id;
+  if (!chatId || !messageId) return;
+
+  // İlgili post'u bul
+  const post = db
+    .prepare(
+      `SELECT p.id FROM posts p
+       JOIN channels c ON c.id = p.channel_id
+       WHERE c.chat_id = ? AND p.telegram_message_id = ?`,
+    )
+    .get(chatId, messageId);
+  if (!post) return;
+
+  // Reactions formatı: [{ type: 'emoji'|'custom_emoji', emoji?, custom_emoji_id?, total_count }]
+  const list = update.reactions || [];
+  const map = {};
+  let total = 0;
+  for (const r of list) {
+    const key = r.type?.emoji || r.emoji || (r.type?.custom_emoji_id && `✨${r.type.custom_emoji_id}`) || '?';
+    const count = r.total_count || 0;
+    map[key] = (map[key] || 0) + count;
+    total += count;
+  }
+  db.prepare(
+    `UPDATE posts SET reactions = ?, last_stats_update = datetime('now') WHERE id = ?`,
+  ).run(JSON.stringify(map), post.id);
+  db.prepare(
+    `INSERT INTO post_stats_history (post_id, views, reactions_total) VALUES (?, ?, ?)`,
+  ).run(post.id, 0, total);
+  console.log(`[bot] post #${post.id} reactions güncellendi (total=${total})`);
 }
 
 function escapeHtml(s) {
@@ -158,8 +238,21 @@ function buildReplyMarkup(buttonsJson) {
   return { inline_keyboard: buttons };
 }
 
+function resolveMediaPath(p) {
+  const path = require('path');
+  const fs = require('fs');
+  const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
+  // Geriye dönük uyum: eski kayıtlar 'uploads/xxx.jpg' formatında olabilir
+  const filename = String(p).replace(/^uploads[\\/]/, '');
+  const full = path.join(UPLOAD_DIR, filename);
+  if (!fs.existsSync(full)) throw new Error('Medya dosyası bulunamadı: ' + full);
+  return full;
+}
+
 async function sendPost(post, channel) {
   if (!bot) throw new Error('Bot başlatılmamış (TELEGRAM_BOT_TOKEN eksik)');
+
+  const fs = require('fs');
 
   const opts = {
     parse_mode: post.parse_mode || 'HTML',
@@ -168,20 +261,83 @@ async function sendPost(post, channel) {
     reply_markup: buildReplyMarkup(post.buttons),
   };
 
-  if (post.photo_path) {
-    const path = require('path');
-    const fs = require('fs');
-    const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');
-    // Geriye dönük uyum: eski kayıtlar 'uploads/xxx.jpg' formatında olabilir
-    const filename = post.photo_path.replace(/^uploads[\\/]/, '');
-    const fullPath = path.join(UPLOAD_DIR, filename);
-    if (!fs.existsSync(fullPath)) throw new Error('Foto dosyası bulunamadı: ' + fullPath);
-    return bot.sendPhoto(channel.chat_id, fs.createReadStream(fullPath), {
+  // 1) Media group / album
+  if (post.media_type === 'media_group' && post.media_group) {
+    let group;
+    try {
+      group = JSON.parse(post.media_group);
+    } catch {
+      throw new Error('media_group JSON parse hatası');
+    }
+    if (!Array.isArray(group) || group.length === 0) throw new Error('Boş media group');
+    if (group.length > 10) throw new Error('Telegram media group max 10 öğe alır');
+
+    const media = group.map((item, idx) => {
+      const full = resolveMediaPath(item.path);
+      const entry = {
+        type: item.type || 'photo', // photo|video|document|audio
+        media: fs.createReadStream(full),
+      };
+      // Caption sadece ilk öğeye konur (album-wide caption davranışı)
+      if (idx === 0 && post.text) {
+        entry.caption = post.text;
+        entry.parse_mode = opts.parse_mode;
+      }
+      return entry;
+    });
+    return bot.sendMediaGroup(channel.chat_id, media, {
+      disable_notification: opts.disable_notification,
+    });
+  }
+
+  // 2) Tekli medya tipleri
+  const mt = post.media_type;
+  const photoLike = post.photo_path; // legacy ya da media_path olarak yeniden kullanılır
+
+  if ((mt === 'photo' || (!mt && photoLike)) && photoLike) {
+    return bot.sendPhoto(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
       caption: post.text,
       ...opts,
     });
   }
+  if (mt === 'video' && photoLike) {
+    return bot.sendVideo(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
+      caption: post.text,
+      ...opts,
+    });
+  }
+  if (mt === 'animation' && photoLike) {
+    // GIF / animasyon
+    return bot.sendAnimation(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
+      caption: post.text,
+      ...opts,
+    });
+  }
+  if (mt === 'document' && photoLike) {
+    return bot.sendDocument(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
+      caption: post.text,
+      ...opts,
+    });
+  }
+  if (mt === 'sticker' && photoLike) {
+    // Sticker'ın caption'ı yoktur; varsa metni ayrı mesaj olarak da yollayalım
+    const stickerMsg = await bot.sendSticker(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
+      disable_notification: opts.disable_notification,
+      reply_markup: opts.reply_markup,
+    });
+    if (post.text && post.text.trim()) {
+      await bot.sendMessage(channel.chat_id, post.text, opts);
+    }
+    return stickerMsg;
+  }
+
+  // 3) Sade metin
   return bot.sendMessage(channel.chat_id, post.text, opts);
 }
 
-module.exports = { init, getBot, sendPost, buildReplyMarkup };
+async function deleteChannelMessage(chatId, messageId) {
+  if (!bot) throw new Error('Bot başlatılmamış');
+  return bot.deleteMessage(chatId, messageId);
+}
+
+module.exports = { init, getBot, sendPost, deleteChannelMessage, buildReplyMarkup };

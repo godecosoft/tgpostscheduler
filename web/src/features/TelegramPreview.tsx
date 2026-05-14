@@ -1,13 +1,16 @@
 import { useMemo } from 'react';
-import type { ButtonGrid, Channel } from '@/lib/types';
+import type { ButtonGrid, Channel, MediaGroupItem, MediaType } from '@/lib/types';
 
 interface Props {
   channel?: Channel | null;
   text: string;
+  mediaType?: MediaType;
   photoUrl?: string | null;
+  mediaGroup?: MediaGroupItem[];
   buttons: ButtonGrid;
   scheduledAt?: string;
   silent?: boolean;
+  autoDeleteMinutes?: number | null;
 }
 
 /**
@@ -59,20 +62,38 @@ function timeNow(scheduledAt?: string): string {
   return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function TelegramPreview({ channel, text, photoUrl, buttons, scheduledAt, silent }: Props) {
+export function TelegramPreview({
+  channel,
+  text,
+  mediaType,
+  photoUrl,
+  mediaGroup,
+  buttons,
+  scheduledAt,
+  silent,
+  autoDeleteMinutes,
+}: Props) {
   const html = useMemo(() => renderTelegramHtml(text), [text]);
   const charCount = text.length;
-  const limit = photoUrl ? 1024 : 4096;
+  const hasCaption = !!photoUrl || mediaType === 'media_group' || mediaType === 'video' || mediaType === 'animation';
+  const limit = hasCaption ? 1024 : 4096;
   const overLimit = charCount > limit;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           {charCount} / {limit} karakter
           {overLimit && <span className="ml-2 text-destructive font-medium">Limit aşıldı!</span>}
         </span>
-        {silent && <span className="text-amber-500">🔕 Sessiz</span>}
+        <div className="flex items-center gap-2">
+          {silent && <span className="text-amber-500">🔕 Sessiz</span>}
+          {autoDeleteMinutes ? (
+            <span className="rounded bg-destructive/20 px-1.5 py-0.5 text-destructive">
+              ⏱ {autoDeleteMinutes}dk sonra silinir
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {/* Telefon çerçevesi */}
@@ -93,12 +114,72 @@ export function TelegramPreview({ channel, text, photoUrl, buttons, scheduledAt,
         {/* Sohbet zemini */}
         <div className="tg-chat-bg min-h-[420px] px-3 py-4">
           <div className="ml-auto max-w-[95%] rounded-2xl rounded-br-sm bg-[#2b5278] px-2 py-2 text-white shadow-md">
-            {photoUrl && (
-              <img
-                src={photoUrl}
-                alt=""
-                className="mb-1 max-h-72 w-full rounded-xl object-cover"
-              />
+            {/* Media render */}
+            {mediaType === 'media_group' && mediaGroup && mediaGroup.length > 0 && (
+              <div
+                className={
+                  'mb-1 grid gap-0.5 overflow-hidden rounded-xl ' +
+                  (mediaGroup.length === 1
+                    ? 'grid-cols-1'
+                    : mediaGroup.length === 2
+                    ? 'grid-cols-2'
+                    : mediaGroup.length === 3
+                    ? 'grid-cols-3'
+                    : 'grid-cols-2')
+                }
+              >
+                {mediaGroup.slice(0, 4).map((m, i) => (
+                  <div key={i} className="relative aspect-square bg-black/30">
+                    {m.type === 'video' ? (
+                      <>
+                        <video src={m.url} className="h-full w-full object-cover" muted />
+                        <div className="absolute inset-0 flex items-center justify-center text-3xl">▶️</div>
+                      </>
+                    ) : (
+                      <img src={m.url} alt="" className="h-full w-full object-cover" />
+                    )}
+                    {i === 3 && mediaGroup.length > 4 && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-2xl font-bold">
+                        +{mediaGroup.length - 4}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {mediaType !== 'media_group' && photoUrl && (
+              <>
+                {mediaType === 'video' && (
+                  <video
+                    src={photoUrl}
+                    className="mb-1 max-h-72 w-full rounded-xl object-cover"
+                    controls
+                    muted
+                  />
+                )}
+                {mediaType === 'animation' && (
+                  <video
+                    src={photoUrl}
+                    className="mb-1 max-h-72 w-full rounded-xl object-cover"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                  />
+                )}
+                {mediaType === 'sticker' && (
+                  <img src={photoUrl} alt="" className="mb-1 max-h-48 max-w-48 object-contain" />
+                )}
+                {mediaType === 'document' && (
+                  <div className="mb-1 flex items-center gap-2 rounded-xl bg-black/20 p-2 text-xs">
+                    <span className="text-2xl">📄</span>
+                    <span className="truncate">Doküman</span>
+                  </div>
+                )}
+                {(mediaType === 'photo' || !mediaType) && (
+                  <img src={photoUrl} alt="" className="mb-1 max-h-72 w-full rounded-xl object-cover" />
+                )}
+              </>
             )}
             <div
               className="tg-text px-2 pb-1 pt-1 text-[15px] leading-snug"

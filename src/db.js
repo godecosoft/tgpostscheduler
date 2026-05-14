@@ -55,7 +55,36 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_posts_status_time ON posts(status, scheduled_at);
+
+  CREATE TABLE IF NOT EXISTS post_stats_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL,
+    captured_at TEXT DEFAULT (datetime('now')),
+    views INTEGER DEFAULT 0,
+    reactions_total INTEGER DEFAULT 0,
+    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_stats_post_time ON post_stats_history(post_id, captured_at);
 `);
+
+// --- Migration: yeni kolonlar (idempotent) ---
+function safeAddColumn(table, column, definition) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`[db] migration: ${table}.${column} eklendi`);
+  } catch (err) {
+    if (!String(err.message).includes('duplicate column name')) throw err;
+  }
+}
+
+safeAddColumn('posts', 'media_type', "TEXT DEFAULT 'text'"); // text|photo|video|animation|sticker|document|media_group
+safeAddColumn('posts', 'media_group', 'TEXT'); // JSON array: [{type,path,caption?}]
+safeAddColumn('posts', 'cron_expression', 'TEXT');
+safeAddColumn('posts', 'auto_delete_minutes', 'INTEGER');
+safeAddColumn('posts', 'delete_at', 'TEXT');
+safeAddColumn('posts', 'views', 'INTEGER DEFAULT 0');
+safeAddColumn('posts', 'reactions', 'TEXT'); // JSON: {"👍":12, "❤":5}
+safeAddColumn('posts', 'last_stats_update', 'TEXT');
 
 // İlk admin kullanıcı setup
 function ensureAdmin() {
