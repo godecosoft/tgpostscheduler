@@ -140,7 +140,13 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
       update('photo_url', r.url);
       update('media_type', r.media_type);
       update('media_group', []);
-      toast.success(`Yüklendi: ${r.media_type}`);
+      const labels: Record<string, string> = {
+        photo: '📷 Foto', video: '🎬 Video', animation: '🎞️ GIF',
+        sticker: '✨ Sticker', document: '📄 Dosya', audio: '🎵 Ses',
+      };
+      toast.success(`Yüklendi: ${labels[r.media_type] || r.media_type}`, {
+        description: 'Yanlış algılandıysa aşağıdan medya tipini değiştirebilirsin.',
+      });
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -339,17 +345,24 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="image/*,video/*,.gif,.webp,.tgs"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,video/*,.gif,.webp,.tgs,.mp4,.mov,application/pdf"
                   hidden
-                  onChange={(e) => e.target.files?.[0] && handleSingleUpload(e.target.files[0])}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleSingleUpload(f);
+                    e.target.value = ''; // aynı dosyayı tekrar seçebilmek için reset
+                  }}
                 />
                 <input
                   ref={multiFileRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept="image/jpeg,image/png,image/webp,video/*"
                   hidden
-                  onChange={(e) => e.target.files && handleMultiUpload(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) handleMultiUpload(e.target.files);
+                    e.target.value = '';
+                  }}
                 />
                 <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
                   <ImageIcon className="mr-1 h-3.5 w-3.5" /> Tekli
@@ -373,25 +386,48 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
                 <span>📥 Sürükle-bırak ile foto/video/GIF yükle • veya yukarıdaki butonları kullan</span>
               )}
               {draft.photo_url && (
-                <div className="flex items-center justify-between gap-2 text-left">
-                  <div className="flex items-center gap-2">
-                    {draft.media_type === 'video' ? (
-                      <Film className="h-4 w-4 text-blue-400" />
-                    ) : draft.media_type === 'animation' ? (
-                      <Film className="h-4 w-4 text-purple-400" />
-                    ) : draft.media_type === 'sticker' ? (
-                      <Sparkles className="h-4 w-4 text-amber-400" />
-                    ) : draft.media_type === 'document' ? (
-                      <FileText className="h-4 w-4" />
-                    ) : (
-                      <ImageIcon className="h-4 w-4 text-emerald-400" />
-                    )}
-                    <Badge variant="secondary">{draft.media_type}</Badge>
-                    <span className="truncate text-xs">{draft.photo_path}</span>
+                <div className="space-y-2 text-left">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {draft.media_type === 'video' ? (
+                        <Film className="h-4 w-4 text-blue-400" />
+                      ) : draft.media_type === 'animation' ? (
+                        <Film className="h-4 w-4 text-purple-400" />
+                      ) : draft.media_type === 'sticker' ? (
+                        <Sparkles className="h-4 w-4 text-amber-400" />
+                      ) : draft.media_type === 'document' ? (
+                        <FileText className="h-4 w-4" />
+                      ) : (
+                        <ImageIcon className="h-4 w-4 text-emerald-400" />
+                      )}
+                      <span className="truncate text-xs">{draft.photo_path}</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={clearMedia}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  <Button type="button" variant="ghost" size="sm" onClick={clearMedia}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[11px] text-muted-foreground">Telegram'a şu olarak gönder:</Label>
+                    <Select
+                      value={draft.media_type}
+                      onValueChange={(v) => update('media_type', v as MediaType)}
+                    >
+                      <SelectTrigger className="h-8 w-40 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="photo">📷 Foto (sıkıştırılmış)</SelectItem>
+                        <SelectItem value="video">🎬 Video</SelectItem>
+                        <SelectItem value="animation">🎞️ GIF / Animasyon</SelectItem>
+                        <SelectItem value="sticker">✨ Sticker</SelectItem>
+                        <SelectItem value="document">📄 Dosya (orijinal kalite)</SelectItem>
+                        <SelectItem value="audio">🎵 Ses</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-[10px] text-muted-foreground">
+                      Yanlış algılandıysa değiştir
+                    </span>
+                  </div>
                 </div>
               )}
               {draft.media_group.length > 0 && (

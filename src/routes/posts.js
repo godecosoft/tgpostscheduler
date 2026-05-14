@@ -33,11 +33,30 @@ const upload = multer({
 });
 
 function detectMediaType(mimetype, filename) {
-  if (/^image\/gif$/i.test(mimetype)) return 'animation';
-  if (/^image\//i.test(mimetype)) return 'photo';
-  if (/^video\//i.test(mimetype)) return 'video';
-  if (/\.(tgs|webp)$/i.test(filename) || mimetype === 'application/x-tgsticker') return 'sticker';
-  if (/^audio\//i.test(mimetype)) return 'audio';
+  const mt = String(mimetype || '').toLowerCase();
+  const name = String(filename || '').toLowerCase();
+  const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
+
+  // 1) GIF — animation (her iki sinyal de)
+  if (mt === 'image/gif' || ext === 'gif') return 'animation';
+
+  // 2) Telegram sticker — sadece .tgs (animated) ya da explicit sticker mime
+  // .webp → kullanıcı isterse sticker, ama default photo (sticker manual override için bırak)
+  if (ext === 'tgs' || mt === 'application/x-tgsticker') return 'sticker';
+
+  // 3) Photo — image/* (gif hariç)
+  if (mt.startsWith('image/')) return 'photo';
+  if (['jpg', 'jpeg', 'png', 'webp', 'bmp', 'heic', 'heif'].includes(ext)) return 'photo';
+
+  // 4) Video
+  if (mt.startsWith('video/')) return 'video';
+  if (['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v', '3gp'].includes(ext)) return 'video';
+
+  // 5) Audio
+  if (mt.startsWith('audio/')) return 'audio';
+  if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'opus', 'aac'].includes(ext)) return 'audio';
+
+  // 6) Bilinmiyorsa document (PDF vb.)
   return 'document';
 }
 
