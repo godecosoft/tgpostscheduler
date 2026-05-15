@@ -76,6 +76,9 @@ export interface Template {
   created_at: string;
 }
 
+export type ScheduleMode = 'oneoff' | 'interval' | 'weekly' | 'monthly' | 'custom';
+export type IntervalUnit = 'minute' | 'hour' | 'day';
+
 export interface ComposeDraft {
   channel_id: number | null;
   text: string;
@@ -84,9 +87,22 @@ export interface ComposeDraft {
   photo_url: string | null;
   media_group: MediaGroupItem[];
   buttons: ButtonGrid;
-  scheduled_at: string;
-  recurring: '' | 'hourly' | 'daily' | 'weekly' | 'monthly';
+
+  // Zamanlama
+  scheduled_at: string;          // datetime-local — tek seferlik veya başlangıç
+  schedule_mode: ScheduleMode;
+  // interval modu
+  interval_value: number;
+  interval_unit: IntervalUnit;
+  // weekly modu
+  weekdays: number[];            // 0=Paz, 1=Pzt, ..., 6=Cmt
+  weekly_time: string;           // "HH:MM"
+  // monthly modu
+  monthly_day: number;           // 1-31
+  monthly_time: string;          // "HH:MM"
+  // custom cron
   cron_expression: string;
+
   auto_delete_minutes: number | null;
   silent: boolean;
   disable_preview: boolean;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Bold, Italic, Underline, Strikethrough, Code, EyeOff, Link as LinkIcon,
   ImageIcon, Plus, Trash2, Send, CalendarClock, Loader2, Sparkles,
-  Film, FileText, Layers, Clock, Repeat as RepeatIcon, GripVertical,
+  Film, FileText, Layers, Clock, CalendarDays, Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,20 +17,13 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type {
   Channel, Template, ButtonGrid, ComposeDraft, MediaType, MediaGroupItem, UploadResult,
+  ScheduleMode, IntervalUnit,
 } from '@/lib/types';
-import { localInputToISO, toLocalInputValue, checkTelegramHtml } from '@/lib/utils';
+import { localInputToISO, toLocalInputValue, checkTelegramHtml, formatDateTime } from '@/lib/utils';
+import { buildCron, nextFirings, WEEKDAY_LABELS, SCHEDULE_MODE_LABELS } from '@/lib/schedule';
 import { TelegramPreview } from './TelegramPreview';
 
 const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
-
-const CRON_PRESETS: { label: string; value: string; hint: string }[] = [
-  { label: 'Hafta içi öğlen', value: '0 12 * * 1-5', hint: 'Pzt-Cuma 12:00' },
-  { label: 'Hafta sonu sabah', value: '0 10 * * 0,6', hint: 'Cmt-Paz 10:00' },
-  { label: 'Her Cuma 18:00', value: '0 18 * * 5', hint: 'Cuma 18:00' },
-  { label: 'Her ayın 1\'i 09:00', value: '0 9 1 * *', hint: 'Ayın 1\'i 09:00' },
-  { label: 'Her gün 09 ve 18', value: '0 9,18 * * *', hint: 'Sabah & akşam' },
-  { label: 'Her 30 dakikada', value: '*/30 * * * *', hint: 'Çok sık' },
-];
 
 interface Props {
   channels: Channel[];
@@ -47,7 +40,13 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
   media_group: [],
   buttons: [],
   scheduled_at: toLocalInputValue(new Date(Date.now() + 5 * 60 * 1000)),
-  recurring: '',
+  schedule_mode: 'oneoff',
+  interval_value: 1,
+  interval_unit: 'hour',
+  weekdays: [1], // default Pzt
+  weekly_time: '12:00',
+  monthly_day: 1,
+  monthly_time: '12:00',
   cron_expression: '',
   auto_delete_minutes: null,
   silent: false,
@@ -57,7 +56,6 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
 export function ComposeTab({ channels, templates, onSaved }: Props) {
   const [draft, setDraft] = useState<ComposeDraft>(emptyDraft(channels[0]?.id ?? null));
   const [busy, setBusy] = useState(false);
-  const [advanced, setAdvanced] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const multiFileRef = useRef<HTMLInputElement>(null);
@@ -245,12 +243,38 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
     const hasMedia = !!draft.photo_url || draft.media_group.length > 0;
     if (!draft.text.trim() && !hasMedia) return toast.error('Metin veya görsel ekleyin');
 
+    // Cron expression hesapla (oneoff dışında)
+    const cron = buildCron(draft);
+
+    // Validation: weekly modda en az 1 gün seçili olmalı
+    if (draft.schedule_mode === 'weekly' && draft.weekdays.length === 0) {
+      return toast.error('Haftalık modda en az 1 gün seçin');
+    }
+    if (draft.schedule_mode === 'custom' && !cron) {
+      return toast.error('Custom modda cron expression girin');
+    }
+
+    // İlk gönderim zamanı:
+    // - sendNow: hemen
+    // - oneoff: kullanıcının seçtiği datetime
+    // - recurring: cron'un bir sonraki firing'i
+    let scheduledISO: string;
+    if (sendNow) {
+      scheduledISO = new Date(Date.now() - 1000).toISOString();
+    } else if (draft.schedule_mode === 'oneoff') {
+      scheduledISO = localInputToISO(draft.scheduled_at);
+    } else if (cron) {
+      const next = nextFirings(cron, new Date(), 1)[0];
+      if (!next) {
+        return toast.error('Bu cron pattern\'a uyan bir firing bulunamadı (90 gün içinde)');
+      }
+      scheduledISO = next.toISOString();
+    } else {
+      scheduledISO = localInputToISO(draft.scheduled_at);
+    }
+
     setBusy(true);
     try {
-      const scheduled = sendNow
-        ? new Date(Date.now() - 1000).toISOString()
-        : localInputToISO(draft.scheduled_at);
-
       const cleanButtons = draft.buttons
         .map((row) => row.filter((b) => b.text && b.url))
         .filter((row) => row.length > 0);
@@ -267,9 +291,9 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
         parse_mode: 'HTML',
         disable_preview: draft.disable_preview,
         silent: draft.silent,
-        scheduled_at: scheduled,
-        recurring: draft.recurring || null,
-        cron_expression: draft.cron_expression.trim() || null,
+        scheduled_at: scheduledISO,
+        recurring: null, // artık kullanılmıyor — cron kullanılıyor
+        cron_expression: cron, // null ise tek seferlik
         auto_delete_minutes: draft.auto_delete_minutes || null,
       });
 
@@ -277,7 +301,9 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
         await api.post(`/api/posts/${r.id}/send-now`);
         toast.success('Gönderildi! 🚀');
       } else {
-        toast.success('Zamanlandı 📅');
+        toast.success(
+          draft.schedule_mode === 'oneoff' ? 'Zamanlandı 📅' : 'Tekrarlı zamanlandı 🔁',
+        );
       }
 
       setDraft(emptyDraft(draft.channel_id));
@@ -545,107 +571,237 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Tarih & Saat</Label>
-              <Input type="datetime-local" value={draft.scheduled_at} onChange={(e) => update('scheduled_at', e.target.value)} />
+          {/* --- ZAMANLAMA --- */}
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              <Label className="text-base font-semibold">Zamanlama</Label>
             </div>
+
             <div className="space-y-2">
-              <Label>Tekrar (önayar)</Label>
+              <Label className="text-xs">Mod</Label>
               <Select
-                value={draft.recurring || 'none'}
-                onValueChange={(v) => update('recurring', (v === 'none' ? '' : v) as ComposeDraft['recurring'])}
+                value={draft.schedule_mode}
+                onValueChange={(v) => update('schedule_mode', v as ScheduleMode)}
               >
-                <SelectTrigger><SelectValue placeholder="Tek seferlik" /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Tek seferlik</SelectItem>
-                  <SelectItem value="hourly">Her saat</SelectItem>
-                  <SelectItem value="daily">Her gün</SelectItem>
-                  <SelectItem value="weekly">Her hafta</SelectItem>
-                  <SelectItem value="monthly">Her ay</SelectItem>
+                  {(Object.keys(SCHEDULE_MODE_LABELS) as ScheduleMode[]).map((m) => (
+                    <SelectItem key={m} value={m}>{SCHEDULE_MODE_LABELS[m]}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          {/* Gelişmiş ayarlar — kapanıp açılır */}
-          <div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setAdvanced(!advanced)}
-              className="text-xs text-muted-foreground"
-            >
-              {advanced ? '▼' : '▶'} Gelişmiş ayarlar (Custom cron, Auto-delete)
-            </Button>
-            {advanced && (
-              <div className="mt-3 space-y-4 rounded-md border bg-muted/20 p-3">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <RepeatIcon className="h-3.5 w-3.5" /> Custom Cron Expression
-                  </Label>
+            {/* Mod'a göre dinamik alanlar */}
+            {draft.schedule_mode === 'oneoff' && (
+              <div className="space-y-2">
+                <Label className="text-xs">Tarih & Saat</Label>
+                <Input
+                  type="datetime-local"
+                  value={draft.scheduled_at}
+                  onChange={(e) => update('scheduled_at', e.target.value)}
+                />
+              </div>
+            )}
+
+            {draft.schedule_mode === 'interval' && (
+              <div className="space-y-2">
+                <Label className="text-xs">Sıklık</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">Her</span>
                   <Input
-                    value={draft.cron_expression}
-                    onChange={(e) => update('cron_expression', e.target.value)}
-                    placeholder="0 12 * * 1-5  (hafta içi öğlen)"
-                    className="font-mono"
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={draft.interval_value}
+                    onChange={(e) => update('interval_value', Math.max(1, Number(e.target.value) || 1))}
+                    className="w-20"
                   />
-                  <div className="flex flex-wrap gap-1">
-                    {CRON_PRESETS.map((p) => (
-                      <Button
-                        key={p.value}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-6 text-[11px]"
-                        onClick={() => update('cron_expression', p.value)}
-                        title={p.hint}
-                      >
-                        {p.label}
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Doluysa <code>Tekrar</code> önayarı yerine bu kullanılır. Format:
-                    <code className="mx-1">dakika saat gün ay haftagünü</code>
-                    (0=Pazar, 1-5=Pzt-Cuma)
-                  </p>
+                  <Select
+                    value={draft.interval_unit}
+                    onValueChange={(v) => update('interval_unit', v as IntervalUnit)}
+                  >
+                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minute">dakikada</SelectItem>
+                      <SelectItem value="hour">saatte</SelectItem>
+                      <SelectItem value="day">günde</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-muted-foreground">bir gönder</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5" /> Otomatik Sil (dakika)
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="Boş = silme"
-                      value={draft.auto_delete_minutes ?? ''}
-                      onChange={(e) =>
-                        update('auto_delete_minutes', e.target.value ? Number(e.target.value) : null)
-                      }
-                      className="max-w-32"
-                    />
-                    {[15, 60, 360, 1440].map((m) => (
-                      <Button
-                        key={m}
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => update('auto_delete_minutes', m)}
-                      >
-                        {m < 60 ? `${m}dk` : m === 1440 ? '1 gün' : `${m / 60}sa`}
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Telegram, bot mesajlarını sadece <b>48 saat içinde</b> silebilir.
-                  </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {[
+                    { v: 30, u: 'minute', l: '30dk' },
+                    { v: 1, u: 'hour', l: 'Saatlik' },
+                    { v: 3, u: 'hour', l: '3 saat' },
+                    { v: 6, u: 'hour', l: '6 saat' },
+                    { v: 12, u: 'hour', l: '12 saat' },
+                    { v: 1, u: 'day', l: 'Günlük' },
+                    { v: 2, u: 'day', l: '2 günde 1' },
+                    { v: 7, u: 'day', l: 'Haftalık' },
+                  ].map((p) => (
+                    <Button
+                      key={`${p.v}-${p.u}`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[11px]"
+                      onClick={() => {
+                        update('interval_value', p.v);
+                        update('interval_unit', p.u as IntervalUnit);
+                      }}
+                    >
+                      {p.l}
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
+
+            {draft.schedule_mode === 'weekly' && (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">Günler</Label>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {WEEKDAY_LABELS.map((d) => {
+                      const active = draft.weekdays.includes(d.num);
+                      return (
+                        <Button
+                          key={d.num}
+                          type="button"
+                          variant={active ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-9 w-12"
+                          onClick={() => {
+                            const next = active
+                              ? draft.weekdays.filter((x) => x !== d.num)
+                              : [...draft.weekdays, d.num];
+                            update('weekdays', next);
+                          }}
+                          title={d.full}
+                        >
+                          {d.short}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px]"
+                      onClick={() => update('weekdays', [1, 2, 3, 4, 5])}>Hafta içi</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px]"
+                      onClick={() => update('weekdays', [0, 6])}>Hafta sonu</Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-6 text-[11px]"
+                      onClick={() => update('weekdays', [0, 1, 2, 3, 4, 5, 6])}>Her gün</Button>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Saat</Label>
+                  <Input
+                    type="time"
+                    value={draft.weekly_time}
+                    onChange={(e) => update('weekly_time', e.target.value)}
+                    className="mt-1.5 max-w-32"
+                  />
+                </div>
+              </div>
+            )}
+
+            {draft.schedule_mode === 'monthly' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-xs">Ayın günü (1-31)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={draft.monthly_day}
+                    onChange={(e) => update('monthly_day', Math.max(1, Math.min(31, Number(e.target.value) || 1)))}
+                    className="mt-1.5"
+                  />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Şubat'ta 30/31 yoksa o ay atlanır.
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-xs">Saat</Label>
+                  <Input
+                    type="time"
+                    value={draft.monthly_time}
+                    onChange={(e) => update('monthly_time', e.target.value)}
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+            )}
+
+            {draft.schedule_mode === 'custom' && (
+              <div className="space-y-2">
+                <Label className="text-xs flex items-center gap-1">
+                  <Repeat className="h-3 w-3" /> Cron Expression
+                </Label>
+                <Input
+                  value={draft.cron_expression}
+                  onChange={(e) => update('cron_expression', e.target.value)}
+                  placeholder="0 12 * * 1-5"
+                  className="font-mono"
+                />
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { v: '0 9,18 * * *', l: 'Her gün 09 ve 18' },
+                    { v: '*/30 * * * *', l: 'Her 30 dk' },
+                    { v: '0 12 * * 1-5', l: 'Hafta içi öğle' },
+                    { v: '0 18 * * 5', l: 'Her Cuma 18:00' },
+                  ].map((p) => (
+                    <Button key={p.v} type="button" variant="outline" size="sm"
+                      className="h-6 text-[11px]"
+                      onClick={() => update('cron_expression', p.v)}>
+                      {p.l}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Format: <code>dakika saat gün ay haftagünü</code> · 0=Pazar, 1-5=Pzt-Cuma
+                </p>
+              </div>
+            )}
+
+            {/* Sonraki gönderim önizlemesi */}
+            <SchedulePreview draft={draft} />
+          </div>
+
+          {/* Auto-delete */}
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-4">
+            <Label className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" /> Otomatik Sil (dakika)
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                type="number"
+                min={0}
+                placeholder="Boş = silme"
+                value={draft.auto_delete_minutes ?? ''}
+                onChange={(e) =>
+                  update('auto_delete_minutes', e.target.value ? Number(e.target.value) : null)
+                }
+                className="max-w-32"
+              />
+              {[15, 60, 360, 1440, null].map((m) => (
+                <Button
+                  key={String(m)}
+                  type="button"
+                  variant={draft.auto_delete_minutes === m ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => update('auto_delete_minutes', m)}
+                >
+                  {m === null ? 'Silme' : m < 60 ? `${m}dk` : m === 1440 ? '1 gün' : `${m / 60}sa`}
+                </Button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Telegram bot mesajlarını sadece <b>48 saat içinde</b> silebilir.
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-4">
@@ -693,6 +849,60 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
           />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function SchedulePreview({ draft }: { draft: ComposeDraft }) {
+  const cron = buildCron(draft);
+  if (draft.schedule_mode === 'oneoff') {
+    if (!draft.scheduled_at) return null;
+    const d = new Date(localInputToISO(draft.scheduled_at));
+    const diff = d.getTime() - Date.now();
+    if (diff < 0) {
+      return (
+        <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+          ⚠️ Seçtiğin tarih geçmişte — kaydedince hemen gönderilir.
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-md bg-primary/10 px-3 py-2 text-xs">
+        📅 <b>Gönderim:</b> {formatDateTime(d.toISOString())}
+      </div>
+    );
+  }
+
+  if (!cron) {
+    return (
+      <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
+        ⚠️ Zamanlama bilgisi eksik.
+      </div>
+    );
+  }
+
+  const nexts = nextFirings(cron, new Date(), 3);
+  if (nexts.length === 0) {
+    return (
+      <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        ⚠️ Bu pattern'a uyan firing bulunamadı (90 gün içinde).
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1 rounded-md bg-primary/10 px-3 py-2 text-xs">
+      <div className="flex items-center gap-1 font-medium">
+        🔁 <span>Sonraki gönderimler:</span>
+        <code className="ml-auto rounded bg-background/50 px-1.5 py-0.5 text-[10px]">{cron}</code>
+      </div>
+      <ul className="space-y-0.5 pl-4 text-muted-foreground">
+        {nexts.map((d, i) => (
+          <li key={i}>
+            {i + 1}. {formatDateTime(d.toISOString())}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
