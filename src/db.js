@@ -85,6 +85,7 @@ safeAddColumn('posts', 'delete_at', 'TEXT');
 safeAddColumn('posts', 'views', 'INTEGER DEFAULT 0');
 safeAddColumn('posts', 'reactions', 'TEXT'); // JSON: {"👍":12, "❤":5}
 safeAddColumn('posts', 'last_stats_update', 'TEXT');
+safeAddColumn('posts', 'time_range_minutes', 'INTEGER DEFAULT 0'); // rastgele dağıtım penceresi
 
 // İlk admin kullanıcı setup
 function ensureAdmin() {

@@ -71,11 +71,19 @@ async function processPendingPosts() {
       } else if (post.recurring) {
         nextDate = nextRecurringDate(post.scheduled_at, post.recurring);
       }
+      if (nextDate && post.time_range_minutes && post.time_range_minutes > 0) {
+        // Rastgele offset uygula — her tekrarda farklı saat
+        const d = new Date(nextDate);
+        const offset = Math.floor(Math.random() * post.time_range_minutes);
+        d.setMinutes(d.getMinutes() + offset);
+        nextDate = d.toISOString();
+      }
       if (nextDate) {
         db.prepare(
           `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
-           scheduled_at, recurring, cron_expression, auto_delete_minutes, media_type, media_group)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           scheduled_at, recurring, cron_expression, auto_delete_minutes, media_type, media_group,
+           time_range_minutes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           post.channel_id,
           post.text,
@@ -90,6 +98,7 @@ async function processPendingPosts() {
           post.auto_delete_minutes,
           post.media_type,
           post.media_group,
+          post.time_range_minutes || 0,
         );
       }
     } catch (err) {

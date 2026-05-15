@@ -17,10 +17,13 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type {
   Channel, Template, ButtonGrid, ComposeDraft, MediaType, MediaGroupItem, UploadResult,
-  ScheduleMode, IntervalUnit,
+  ScheduleMode, IntervalUnit, Post,
 } from '@/lib/types';
 import { localInputToISO, toLocalInputValue, checkTelegramHtml, formatDateTime } from '@/lib/utils';
-import { buildCron, nextFirings, WEEKDAY_LABELS, SCHEDULE_MODE_LABELS } from '@/lib/schedule';
+import {
+  buildCron, nextFirings, applyRandomOffset, nextFiringsWithRange,
+  WEEKDAY_LABELS, SCHEDULE_MODE_LABELS,
+} from '@/lib/schedule';
 import { TelegramPreview } from './TelegramPreview';
 
 const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
@@ -29,6 +32,8 @@ interface Props {
   channels: Channel[];
   templates: Template[];
   onSaved: () => void;
+  editingPost?: Post | null;
+  onCancelEdit?: () => void;
 }
 
 const emptyDraft = (channelId: number | null): ComposeDraft => ({
@@ -48,12 +53,50 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
   monthly_day: 1,
   monthly_time: '12:00',
   cron_expression: '',
+  time_range_minutes: 0,
   auto_delete_minutes: null,
   silent: false,
   disable_preview: false,
 });
 
-export function ComposeTab({ channels, templates, onSaved }: Props) {
+// Mevcut Post → ComposeDraft (edit için)
+function postToDraft(p: Post): ComposeDraft {
+  let buttons: ButtonGrid = [];
+  try { buttons = p.buttons ? JSON.parse(p.buttons) : []; } catch {}
+  let mediaGroup: MediaGroupItem[] = [];
+  try {
+    mediaGroup = p.media_group
+      ? JSON.parse(p.media_group).map((m: any) => ({
+          ...m, url: '/uploads/' + m.path,
+        }))
+      : [];
+  } catch {}
+  return {
+    channel_id: p.channel_id,
+    text: p.text || '',
+    media_type: (p.media_type as MediaType) || 'text',
+    photo_path: p.photo_path,
+    photo_url: p.photo_path ? '/uploads/' + p.photo_path : null,
+    media_group: mediaGroup,
+    buttons,
+    scheduled_at: toLocalInputValue(new Date(p.scheduled_at)),
+    // Cron varsa custom mode'a hidrate — kullanıcı isterse weekly/monthly'e değiştirir
+    schedule_mode: p.cron_expression ? 'custom' : 'oneoff',
+    interval_value: 1,
+    interval_unit: 'hour',
+    weekdays: [1],
+    weekly_time: '12:00',
+    monthly_day: 1,
+    monthly_time: '12:00',
+    cron_expression: p.cron_expression || '',
+    time_range_minutes: p.time_range_minutes || 0,
+    auto_delete_minutes: p.auto_delete_minutes,
+    silent: !!p.silent,
+    disable_preview: !!p.disable_preview,
+  };
+}
+
+export function ComposeTab({ channels, templates, onSaved, editingPost, onCancelEdit }: Props) {
   const [draft, setDraft] = useState<ComposeDraft>(emptyDraft(channels[0]?.id ?? null));
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -66,6 +109,15 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
       setDraft((d) => ({ ...d, channel_id: channels[0].id }));
     }
   }, [channels, draft.channel_id]);
+
+  // Edit modu: gelen post'tan draft'ı hidrate et
+  useEffect(() => {
+    if (editingPost) {
+      setDraft(postToDraft(editingPost));
+      // Sayfa başına scroll
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [editingPost?.id]);
 
   const selectedChannel = channels.find((c) => c.id === draft.channel_id) || null;
 
@@ -256,19 +308,20 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
 
     // İlk gönderim zamanı:
     // - sendNow: hemen
-    // - oneoff: kullanıcının seçtiği datetime
-    // - recurring: cron'un bir sonraki firing'i
+    // - oneoff: kullanıcının seçtiği datetime + opsiyonel rastgele offset
+    // - recurring: cron'un bir sonraki firing'i + opsiyonel rastgele offset
     let scheduledISO: string;
     if (sendNow) {
       scheduledISO = new Date(Date.now() - 1000).toISOString();
     } else if (draft.schedule_mode === 'oneoff') {
-      scheduledISO = localInputToISO(draft.scheduled_at);
+      const base = new Date(localInputToISO(draft.scheduled_at));
+      scheduledISO = applyRandomOffset(base, draft.time_range_minutes).toISOString();
     } else if (cron) {
       const next = nextFirings(cron, new Date(), 1)[0];
       if (!next) {
         return toast.error('Bu cron pattern\'a uyan bir firing bulunamadı (90 gün içinde)');
       }
-      scheduledISO = next.toISOString();
+      scheduledISO = applyRandomOffset(next, draft.time_range_minutes).toISOString();
     } else {
       scheduledISO = localInputToISO(draft.scheduled_at);
     }
@@ -279,7 +332,7 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
         .map((row) => row.filter((b) => b.text && b.url))
         .filter((row) => row.length > 0);
 
-      const r = await api.post<{ id: number }>('/api/posts', {
+      const payload = {
         channel_id: draft.channel_id,
         text: draft.text,
         photo_path: draft.photo_path,
@@ -292,18 +345,27 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
         disable_preview: draft.disable_preview,
         silent: draft.silent,
         scheduled_at: scheduledISO,
-        recurring: null, // artık kullanılmıyor — cron kullanılıyor
-        cron_expression: cron, // null ise tek seferlik
+        recurring: null,
+        cron_expression: cron,
         auto_delete_minutes: draft.auto_delete_minutes || null,
-      });
+        time_range_minutes: draft.time_range_minutes || 0,
+      };
 
-      if (sendNow) {
-        await api.post(`/api/posts/${r.id}/send-now`);
-        toast.success('Gönderildi! 🚀');
+      if (editingPost) {
+        // EDIT modu: PUT
+        await api.put(`/api/posts/${editingPost.id}`, payload);
+        toast.success('Güncellendi ✏️');
+        onCancelEdit?.();
       } else {
-        toast.success(
-          draft.schedule_mode === 'oneoff' ? 'Zamanlandı 📅' : 'Tekrarlı zamanlandı 🔁',
-        );
+        const r = await api.post<{ id: number }>('/api/posts', payload);
+        if (sendNow) {
+          await api.post(`/api/posts/${r.id}/send-now`);
+          toast.success('Gönderildi! 🚀');
+        } else {
+          toast.success(
+            draft.schedule_mode === 'oneoff' ? 'Zamanlandı 📅' : 'Tekrarlı zamanlandı 🔁',
+          );
+        }
       }
 
       setDraft(emptyDraft(draft.channel_id));
@@ -326,10 +388,26 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(360px,400px)]">
-      <Card>
+      <Card className={editingPost ? 'border-amber-500/50' : ''}>
         <CardHeader>
-          <CardTitle>Yeni Gönderi</CardTitle>
-          <CardDescription>HTML formatlama, emoji ve satır boşlukları aynen Telegram'a aktarılır.</CardDescription>
+          {editingPost ? (
+            <>
+              <CardTitle className="flex items-center gap-2">
+                ✏️ Düzenleniyor: Post #{editingPost.id}
+              </CardTitle>
+              <CardDescription className="flex items-center justify-between">
+                <span>Değişikliği kaydedince post yeniden zamanlanır.</span>
+                <Button size="sm" variant="ghost" onClick={onCancelEdit}>
+                  ✕ İptal
+                </Button>
+              </CardDescription>
+            </>
+          ) : (
+            <>
+              <CardTitle>Yeni Gönderi</CardTitle>
+              <CardDescription>HTML formatlama, emoji ve satır boşlukları aynen Telegram'a aktarılır.</CardDescription>
+            </>
+          )}
         </CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -767,6 +845,41 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
               </div>
             )}
 
+            {/* Rastgele dağıtım — her saat picker için ortak */}
+            <div className="space-y-1.5 rounded-md border border-dashed p-2.5">
+              <Label className="flex items-center gap-1.5 text-xs">
+                🎲 Rastgele Dağıt (opsiyonel)
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={1440}
+                  value={draft.time_range_minutes || 0}
+                  onChange={(e) => update('time_range_minutes', Math.max(0, Number(e.target.value) || 0))}
+                  className="max-w-24"
+                />
+                <span className="text-xs text-muted-foreground">dakika içinde</span>
+                {[0, 15, 30, 60, 120, 240].map((m) => (
+                  <Button
+                    key={m}
+                    type="button"
+                    variant={draft.time_range_minutes === m ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-6 text-[11px]"
+                    onClick={() => update('time_range_minutes', m)}
+                  >
+                    {m === 0 ? 'Yok' : m < 60 ? `±${m}dk` : `±${m / 60}sa`}
+                  </Button>
+                ))}
+              </div>
+              {draft.time_range_minutes > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Her gönderim, baz saatten 0–{draft.time_range_minutes} dk sonra <b>rastgele</b> bir saatte yapılır.
+                </p>
+              )}
+            </div>
+
             {/* Sonraki gönderim önizlemesi */}
             <SchedulePreview draft={draft} />
           </div>
@@ -820,12 +933,19 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => submit(false)} disabled={busy}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarClock className="mr-2 h-4 w-4" />}
-              Zamanla
+              {editingPost ? 'Değişikliği Kaydet' : 'Zamanla'}
             </Button>
-            <Button variant="secondary" onClick={() => submit(true)} disabled={busy}>
-              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-              Hemen Gönder
-            </Button>
+            {!editingPost && (
+              <Button variant="secondary" onClick={() => submit(true)} disabled={busy}>
+                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Hemen Gönder
+              </Button>
+            )}
+            {editingPost && (
+              <Button variant="ghost" onClick={onCancelEdit} disabled={busy}>
+                İptal
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -855,6 +975,8 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
 
 function SchedulePreview({ draft }: { draft: ComposeDraft }) {
   const cron = buildCron(draft);
+  const range = draft.time_range_minutes || 0;
+
   if (draft.schedule_mode === 'oneoff') {
     if (!draft.scheduled_at) return null;
     const d = new Date(localInputToISO(draft.scheduled_at));
@@ -863,6 +985,15 @@ function SchedulePreview({ draft }: { draft: ComposeDraft }) {
       return (
         <div className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600">
           ⚠️ Seçtiğin tarih geçmişte — kaydedince hemen gönderilir.
+        </div>
+      );
+    }
+    if (range > 0) {
+      const end = new Date(d.getTime() + range * 60 * 1000);
+      return (
+        <div className="rounded-md bg-primary/10 px-3 py-2 text-xs">
+          📅 <b>Gönderim aralığı:</b> {formatDateTime(d.toISOString())} — {formatDateTime(end.toISOString())}
+          <div className="text-[10px] text-muted-foreground">Bu aralık içinde rastgele bir saatte gönderilecek.</div>
         </div>
       );
     }
@@ -881,7 +1012,7 @@ function SchedulePreview({ draft }: { draft: ComposeDraft }) {
     );
   }
 
-  const nexts = nextFirings(cron, new Date(), 3);
+  const nexts = nextFiringsWithRange(cron, range, new Date(), 3);
   if (nexts.length === 0) {
     return (
       <div className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -897,9 +1028,12 @@ function SchedulePreview({ draft }: { draft: ComposeDraft }) {
         <code className="ml-auto rounded bg-background/50 px-1.5 py-0.5 text-[10px]">{cron}</code>
       </div>
       <ul className="space-y-0.5 pl-4 text-muted-foreground">
-        {nexts.map((d, i) => (
+        {nexts.map(({ base, rangeEnd }, i) => (
           <li key={i}>
-            {i + 1}. {formatDateTime(d.toISOString())}
+            {i + 1}. {formatDateTime(base.toISOString())}
+            {rangeEnd && (
+              <span className="opacity-70"> — {formatDateTime(rangeEnd.toISOString())} arası rastgele</span>
+            )}
           </li>
         ))}
       </ul>

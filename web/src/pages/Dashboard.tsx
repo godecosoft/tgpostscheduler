@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3 } from 'lucide-react';
+import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Channel, Post, Template } from '@/lib/types';
@@ -12,6 +12,7 @@ import { PostList } from '@/features/PostList';
 import { ChannelsTab } from '@/features/ChannelsTab';
 import { TemplatesTab } from '@/features/TemplatesTab';
 import { StatsTab } from '@/features/StatsTab';
+import { CalendarTab } from '@/features/CalendarTab';
 
 export function DashboardPage() {
   const nav = useNavigate();
@@ -20,6 +21,16 @@ export function DashboardPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [historyFilter, setHistoryFilter] = useState<'all' | 'sent' | 'failed'>('all');
+  const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [activeTab, setActiveTab] = useState('compose');
+
+  function startEdit(p: Post) {
+    setEditingPost(p);
+    setActiveTab('compose');
+  }
+  function cancelEdit() {
+    setEditingPost(null);
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -82,11 +93,15 @@ export function DashboardPage() {
       </header>
 
       <main className="container py-6">
-        <Tabs defaultValue="compose">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="h-auto flex-wrap gap-1 bg-muted/40 p-1">
             <TabsTrigger value="compose" className="gap-1.5">
               <PencilLine className="h-3.5 w-3.5" />
-              Gönderi Oluştur
+              {editingPost ? `Düzenle #${editingPost.id}` : 'Gönderi Oluştur'}
+            </TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-1.5">
+              <CalendarIcon className="h-3.5 w-3.5" />
+              Takvim
             </TabsTrigger>
             <TabsTrigger value="stats" className="gap-1.5">
               <BarChart3 className="h-3.5 w-3.5" />
@@ -127,8 +142,18 @@ export function DashboardPage() {
                 </p>
               </div>
             ) : (
-              <ComposeTab channels={channels} templates={templates} onSaved={refresh} />
+              <ComposeTab
+                channels={channels}
+                templates={templates}
+                onSaved={refresh}
+                editingPost={editingPost}
+                onCancelEdit={cancelEdit}
+              />
             )}
+          </TabsContent>
+
+          <TabsContent value="calendar">
+            <CalendarTab posts={posts} onChanged={refresh} onEdit={startEdit} />
           </TabsContent>
 
           <TabsContent value="stats">
@@ -139,6 +164,7 @@ export function DashboardPage() {
             <PostList
               posts={pending}
               onChanged={refresh}
+              onEdit={startEdit}
               showSendNow
               emptyMessage="Bekleyen gönderi yok."
             />
@@ -179,7 +205,7 @@ export function DashboardPage() {
                 </Button>
               )}
             </div>
-            <PostList posts={history} onChanged={refresh} emptyMessage="Henüz gönderim yok." />
+            <PostList posts={history} onChanged={refresh} onEdit={startEdit} emptyMessage="Henüz gönderim yok." />
           </TabsContent>
 
           <TabsContent value="channels">

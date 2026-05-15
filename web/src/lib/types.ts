@@ -66,6 +66,7 @@ export interface Post {
   views: number;
   reactions: string | null; // JSON {"👍":12,...}
   last_stats_update: string | null;
+  time_range_minutes: number;
 }
 
 export interface Template {
@@ -102,6 +103,8 @@ export interface ComposeDraft {
   monthly_time: string;          // "HH:MM"
   // custom cron
   cron_expression: string;
+  // Tüm modlar için: hesaplanan zamana 0..N dakika rastgele offset ekle
+  time_range_minutes: number;
 
   auto_delete_minutes: number | null;
   silent: boolean;

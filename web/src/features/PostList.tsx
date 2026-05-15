@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw } from 'lucide-react';
+import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
@@ -10,6 +10,7 @@ import type { Post } from '@/lib/types';
 interface Props {
   posts: Post[];
   onChanged: () => void;
+  onEdit?: (post: Post) => void;
   showSendNow?: boolean;
   emptyMessage?: string;
 }
@@ -40,7 +41,7 @@ function mediaIcon(type: string | null | undefined) {
   );
 }
 
-export function PostList({ posts, onChanged, showSendNow, emptyMessage }: Props) {
+export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }: Props) {
   async function sendNow(id: number) {
     try {
       await api.post(`/api/posts/${id}/send-now`);
@@ -116,6 +117,11 @@ export function PostList({ posts, onChanged, showSendNow, emptyMessage }: Props)
                         <BellOff className="h-3 w-3" /> sessiz
                       </Badge>
                     ) : null}
+                    {p.time_range_minutes > 0 && (
+                      <Badge variant="outline" className="gap-1">
+                        <Shuffle className="h-3 w-3" /> ±{p.time_range_minutes}dk rastgele
+                      </Badge>
+                    )}
                     {p.delete_at && p.status === 'sent' && (
                       <Badge variant="destructive" className="gap-1">
                         <Clock className="h-3 w-3" /> Silinecek: {formatDateTime(p.delete_at)}
@@ -168,6 +174,11 @@ export function PostList({ posts, onChanged, showSendNow, emptyMessage }: Props)
                 </div>
 
                 <div className="flex shrink-0 flex-col gap-1">
+                  {onEdit && (p.status === 'pending' || p.status === 'failed') && (
+                    <Button size="sm" variant="outline" onClick={() => onEdit(p)}>
+                      <Pencil className="mr-1 h-3.5 w-3.5" /> Düzenle
+                    </Button>
+                  )}
                   {p.status === 'failed' && (
                     <Button size="sm" variant="default" onClick={() => retry(p.id)}>
                       <RotateCcw className="mr-1 h-3.5 w-3.5" /> Tekrar Dene

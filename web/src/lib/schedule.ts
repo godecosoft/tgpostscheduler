@@ -118,3 +118,31 @@ export const SCHEDULE_MODE_LABELS: Record<ScheduleMode, string> = {
   monthly: 'Aylık (belirli gün)',
   custom: 'Custom Cron (uzman)',
 };
+
+/**
+ * Verilen base date'e 0..rangeMinutes arası rastgele offset ekler.
+ */
+export function applyRandomOffset(base: Date, rangeMinutes: number): Date {
+  if (!rangeMinutes || rangeMinutes <= 0) return base;
+  const offset = Math.floor(Math.random() * rangeMinutes);
+  const d = new Date(base);
+  d.setMinutes(d.getMinutes() + offset);
+  return d;
+}
+
+/**
+ * Recurring + range birlikte preview için: bir sonraki firing'i çıkar.
+ * Range > 0 ise, base ile base+range arası bir aralık döner.
+ */
+export function nextFiringsWithRange(
+  cron: string,
+  rangeMinutes: number,
+  from: Date = new Date(),
+  count = 3,
+): { base: Date; rangeEnd: Date | null }[] {
+  const bases = nextFirings(cron, from, count);
+  return bases.map((base) => ({
+    base,
+    rangeEnd: rangeMinutes > 0 ? new Date(base.getTime() + rangeMinutes * 60 * 1000) : null,
+  }));
+}

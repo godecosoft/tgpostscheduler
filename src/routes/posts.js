@@ -112,6 +112,7 @@ router.post('/', (req, res) => {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
+    time_range_minutes,
   } = req.body || {};
 
   if (!channel_id || (!text && !photo_path && !media_group) || !scheduled_at) {
@@ -123,8 +124,9 @@ router.post('/', (req, res) => {
   const result = db
     .prepare(
       `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
-       scheduled_at, recurring, media_type, media_group, cron_expression, auto_delete_minutes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       scheduled_at, recurring, media_type, media_group, cron_expression, auto_delete_minutes,
+       time_range_minutes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       channel_id,
@@ -140,6 +142,7 @@ router.post('/', (req, res) => {
       media_group ? JSON.stringify(media_group) : null,
       cron_expression || null,
       auto_delete_minutes ? Number(auto_delete_minutes) : null,
+      time_range_minutes ? Number(time_range_minutes) : 0,
     );
   res.json({ id: result.lastInsertRowid });
 });
@@ -153,13 +156,14 @@ router.put('/:id', (req, res) => {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
+    time_range_minutes,
   } = req.body || {};
 
   db.prepare(
     `UPDATE posts SET channel_id = ?, text = ?, photo_path = ?, buttons = ?, parse_mode = ?,
      disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?,
      media_type = ?, media_group = ?, cron_expression = ?, auto_delete_minutes = ?,
-     status = 'pending', error = NULL
+     time_range_minutes = ?, status = 'pending', error = NULL
      WHERE id = ?`,
   ).run(
     channel_id ?? post.channel_id,
@@ -175,6 +179,7 @@ router.put('/:id', (req, res) => {
     media_group ? JSON.stringify(media_group) : post.media_group,
     cron_expression ?? post.cron_expression,
     auto_delete_minutes != null ? Number(auto_delete_minutes) : post.auto_delete_minutes,
+    time_range_minutes != null ? Number(time_range_minutes) : (post.time_range_minutes || 0),
     req.params.id,
   );
   res.json({ ok: true });
