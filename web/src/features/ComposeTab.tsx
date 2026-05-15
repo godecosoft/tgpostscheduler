@@ -18,7 +18,7 @@ import { api } from '@/lib/api';
 import type {
   Channel, Template, ButtonGrid, ComposeDraft, MediaType, MediaGroupItem, UploadResult,
 } from '@/lib/types';
-import { localInputToISO, toLocalInputValue } from '@/lib/utils';
+import { localInputToISO, toLocalInputValue, checkTelegramHtml } from '@/lib/utils';
 import { TelegramPreview } from './TelegramPreview';
 
 const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
@@ -494,6 +494,28 @@ export function ComposeTab({ channels, templates, onSaved }: Props) {
               className="font-mono text-sm leading-relaxed"
               placeholder={`🎰 HOŞGELDİN BONUSU 🎰\n\n💰 İlk yatırımına %200 bonus\n🎁 50 Free Spin hediye`}
             />
+            {(() => {
+              const issues = checkTelegramHtml(draft.text);
+              if (issues.length === 0) return null;
+              const errors = issues.filter((i) => i.type === 'orphan_close');
+              const warnings = issues.filter((i) => i.type === 'unclosed_open');
+              return (
+                <div className="space-y-1 text-xs">
+                  {errors.length > 0 && (
+                    <div className="rounded-md bg-destructive/10 px-2 py-1.5 text-destructive">
+                      ⚠️ <b>HTML hatası:</b> {errors[0].message}
+                      {errors.length > 1 && ` (+${errors.length - 1} adet daha)`}
+                      <span className="ml-1 opacity-70">— Gönderim öncesi otomatik düzeltilecek.</span>
+                    </div>
+                  )}
+                  {warnings.length > 0 && errors.length === 0 && (
+                    <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-amber-600">
+                      ℹ️ {warnings[0].message}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="space-y-2">

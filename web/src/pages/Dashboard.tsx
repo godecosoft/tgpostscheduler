@@ -145,7 +145,7 @@ export function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="history">
-            <div className="mb-4 flex flex-wrap gap-2">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
               {(['all', 'sent', 'failed'] as const).map((f) => (
                 <Button
                   key={f}
@@ -156,6 +156,28 @@ export function DashboardPage() {
                   {f === 'all' ? 'Tümü' : f === 'sent' ? 'Gönderildi' : 'Başarısız'}
                 </Button>
               ))}
+              {historyFilter === 'failed' && history.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={async () => {
+                    if (!confirm(`${history.length} başarısız postu yeniden denemeye al?`)) return;
+                    try {
+                      await Promise.all(
+                        history.map((p) =>
+                          fetch(`/api/posts/${p.id}/retry`, { method: 'POST', credentials: 'include' }),
+                        ),
+                      );
+                      toast.success(`${history.length} post tekrar denemeye alındı`);
+                      refresh();
+                    } catch (e: any) {
+                      toast.error(e.message);
+                    }
+                  }}
+                >
+                  🔄 Hepsini Tekrar Dene
+                </Button>
+              )}
             </div>
             <PostList posts={history} onChanged={refresh} emptyMessage="Henüz gönderim yok." />
           </TabsContent>

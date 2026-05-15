@@ -185,6 +185,16 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Başarısız bir postu yeniden dene (status'u pending'e al, scheduled_at'i şimdiye)
+router.post('/:id/retry', (req, res) => {
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Bulunamadı' });
+  db.prepare(
+    `UPDATE posts SET status = 'pending', error = NULL, scheduled_at = datetime('now') WHERE id = ?`,
+  ).run(req.params.id);
+  res.json({ ok: true });
+});
+
 // Hemen gönder
 router.post('/:id/send-now', async (req, res) => {
   const post = db

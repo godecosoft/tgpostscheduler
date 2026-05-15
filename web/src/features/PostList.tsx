@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw } from 'lucide-react';
+import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
@@ -45,6 +45,16 @@ export function PostList({ posts, onChanged, showSendNow, emptyMessage }: Props)
     try {
       await api.post(`/api/posts/${id}/send-now`);
       toast.success('Gönderildi');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  async function retry(id: number) {
+    try {
+      await api.post(`/api/posts/${id}/retry`);
+      toast.success('Tekrar denemeye alındı (1 dk içinde gönderilir)');
       onChanged();
     } catch (e: any) {
       toast.error(e.message);
@@ -158,7 +168,12 @@ export function PostList({ posts, onChanged, showSendNow, emptyMessage }: Props)
                 </div>
 
                 <div className="flex shrink-0 flex-col gap-1">
-                  {showSendNow && p.status !== 'sent' && (
+                  {p.status === 'failed' && (
+                    <Button size="sm" variant="default" onClick={() => retry(p.id)}>
+                      <RotateCcw className="mr-1 h-3.5 w-3.5" /> Tekrar Dene
+                    </Button>
+                  )}
+                  {showSendNow && p.status !== 'sent' && p.status !== 'failed' && (
                     <Button size="sm" variant="secondary" onClick={() => sendNow(p.id)}>
                       <Send className="mr-1 h-3.5 w-3.5" /> Gönder
                     </Button>

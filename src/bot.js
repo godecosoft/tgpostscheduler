@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { db } = require('./db');
+const { fixTelegramHtml } = require('./utils/htmlSanitize');
 
 let bot = null;
 let botInfo = null;
@@ -254,12 +255,21 @@ async function sendPost(post, channel) {
 
   const fs = require('fs');
 
+  // HTML balansını gönderim öncesi otomatik düzelt
+  // (orphan </tag>'leri sil, kapanmamış <tag>'leri kapat)
+  const safeText = post.parse_mode === 'HTML' || !post.parse_mode
+    ? fixTelegramHtml(post.text || '').fixed
+    : post.text || '';
+
   const opts = {
     parse_mode: post.parse_mode || 'HTML',
     disable_web_page_preview: !!post.disable_preview,
     disable_notification: !!post.silent,
     reply_markup: buildReplyMarkup(post.buttons),
   };
+
+  // post.text yerine sterilize edilmiş metni kullan
+  const sendableText = safeText;
 
   // 1) Media group / album
   if (post.media_type === 'media_group' && post.media_group) {
@@ -279,8 +289,8 @@ async function sendPost(post, channel) {
         media: fs.createReadStream(full),
       };
       // Caption sadece ilk öğeye konur (album-wide caption davranışı)
-      if (idx === 0 && post.text) {
-        entry.caption = post.text;
+      if (idx === 0 && sendableText) {
+        entry.caption = sendableText;
         entry.parse_mode = opts.parse_mode;
       }
       return entry;
@@ -296,26 +306,26 @@ async function sendPost(post, channel) {
 
   if ((mt === 'photo' || (!mt && photoLike)) && photoLike) {
     return bot.sendPhoto(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
-      caption: post.text,
+      caption: sendableText,
       ...opts,
     });
   }
   if (mt === 'video' && photoLike) {
     return bot.sendVideo(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
-      caption: post.text,
+      caption: sendableText,
       ...opts,
     });
   }
   if (mt === 'animation' && photoLike) {
     // GIF / animasyon
     return bot.sendAnimation(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
-      caption: post.text,
+      caption: sendableText,
       ...opts,
     });
   }
   if (mt === 'document' && photoLike) {
     return bot.sendDocument(channel.chat_id, fs.createReadStream(resolveMediaPath(photoLike)), {
-      caption: post.text,
+      caption: sendableText,
       ...opts,
     });
   }
@@ -325,14 +335,14 @@ async function sendPost(post, channel) {
       disable_notification: opts.disable_notification,
       reply_markup: opts.reply_markup,
     });
-    if (post.text && post.text.trim()) {
-      await bot.sendMessage(channel.chat_id, post.text, opts);
+    if (sendableText && sendableText.trim()) {
+      await bot.sendMessage(channel.chat_id, sendableText, opts);
     }
     return stickerMsg;
   }
 
   // 3) Sade metin
-  return bot.sendMessage(channel.chat_id, post.text, opts);
+  return bot.sendMessage(channel.chat_id, sendableText, opts);
 }
 
 async function deleteChannelMessage(chatId, messageId) {
