@@ -48,6 +48,7 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
   schedule_mode: 'oneoff',
   interval_value: 1,
   interval_unit: 'hour',
+  interval_time: '12:00',
   weekdays: [1], // default Pzt
   weekly_time: '12:00',
   monthly_day: 1,
@@ -84,6 +85,7 @@ function postToDraft(p: Post): ComposeDraft {
     schedule_mode: p.cron_expression ? 'custom' : 'oneoff',
     interval_value: 1,
     interval_unit: 'hour',
+    interval_time: '12:00',
     weekdays: [1],
     weekly_time: '12:00',
     monthly_day: 1,
@@ -684,57 +686,89 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
             )}
 
             {draft.schedule_mode === 'interval' && (
-              <div className="space-y-2">
-                <Label className="text-xs">Sıklık</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm">Her</span>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={999}
-                    value={draft.interval_value}
-                    onChange={(e) => update('interval_value', Math.max(1, Number(e.target.value) || 1))}
-                    className="w-20"
-                  />
-                  <Select
-                    value={draft.interval_unit}
-                    onValueChange={(v) => update('interval_unit', v as IntervalUnit)}
-                  >
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="minute">dakikada</SelectItem>
-                      <SelectItem value="hour">saatte</SelectItem>
-                      <SelectItem value="day">günde</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <span className="text-sm text-muted-foreground">bir gönder</span>
-                </div>
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {[
-                    { v: 30, u: 'minute', l: '30dk' },
-                    { v: 1, u: 'hour', l: 'Saatlik' },
-                    { v: 3, u: 'hour', l: '3 saat' },
-                    { v: 6, u: 'hour', l: '6 saat' },
-                    { v: 12, u: 'hour', l: '12 saat' },
-                    { v: 1, u: 'day', l: 'Günlük' },
-                    { v: 2, u: 'day', l: '2 günde 1' },
-                    { v: 7, u: 'day', l: 'Haftalık' },
-                  ].map((p) => (
-                    <Button
-                      key={`${p.v}-${p.u}`}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-6 text-[11px]"
-                      onClick={() => {
-                        update('interval_value', p.v);
-                        update('interval_unit', p.u as IntervalUnit);
-                      }}
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label className="text-xs">Sıklık</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm">Her</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={999}
+                      value={draft.interval_value}
+                      onChange={(e) => update('interval_value', Math.max(1, Number(e.target.value) || 1))}
+                      className="w-20"
+                    />
+                    <Select
+                      value={draft.interval_unit}
+                      onValueChange={(v) => update('interval_unit', v as IntervalUnit)}
                     >
-                      {p.l}
-                    </Button>
-                  ))}
+                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minute">dakikada</SelectItem>
+                        <SelectItem value="hour">saatte</SelectItem>
+                        <SelectItem value="day">günde</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground">bir gönder</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {[
+                      { v: 30, u: 'minute', l: '30dk' },
+                      { v: 1, u: 'hour', l: 'Saatlik' },
+                      { v: 3, u: 'hour', l: '3 saat' },
+                      { v: 6, u: 'hour', l: '6 saat' },
+                      { v: 12, u: 'hour', l: '12 saat' },
+                      { v: 1, u: 'day', l: 'Günlük' },
+                      { v: 2, u: 'day', l: '2 günde 1' },
+                      { v: 7, u: 'day', l: 'Haftalık' },
+                    ].map((p) => (
+                      <Button
+                        key={`${p.v}-${p.u}`}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[11px]"
+                        onClick={() => {
+                          update('interval_value', p.v);
+                          update('interval_unit', p.u as IntervalUnit);
+                        }}
+                      >
+                        {p.l}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Saat picker — unit'e göre değişir */}
+                {draft.interval_unit === 'day' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Günün saati</Label>
+                    <Input
+                      type="time"
+                      value={draft.interval_time}
+                      onChange={(e) => update('interval_time', e.target.value)}
+                      className="max-w-32"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Her {draft.interval_value} günde bir, bu saatte gönderilir.
+                    </p>
+                  </div>
+                )}
+                {draft.interval_unit === 'hour' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Saatin dakikası</Label>
+                    <Input
+                      type="time"
+                      value={draft.interval_time}
+                      onChange={(e) => update('interval_time', e.target.value)}
+                      className="max-w-32"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Sadece dakika kısmı dikkate alınır (örn. 14:30 → her N saatin :30'unda).
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

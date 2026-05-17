@@ -11,10 +11,14 @@ export function buildCron(draft: ComposeDraft): string | null {
 
     case 'interval': {
       const n = Math.max(1, draft.interval_value || 1);
+      const [h, m] = (draft.interval_time || '12:00').split(':').map((x) => Number(x) || 0);
       if (draft.interval_unit === 'minute') return `*/${n} * * * *`;
-      if (draft.interval_unit === 'hour') return `0 */${n} * * *`;
-      // 'day' — cron'da day-of-month için */N kullanılır (ay başında reset)
-      return `0 0 */${n} * *`;
+      if (draft.interval_unit === 'hour') {
+        // Her N saatte bir, dakikası HH:MM'nin dakikasıyla
+        return `${m} */${n} * * *`;
+      }
+      // 'day' — her N günde bir, HH:MM'de fire
+      return `${m} ${h} */${n} * *`;
     }
 
     case 'weekly': {

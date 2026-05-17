@@ -95,6 +95,8 @@ export interface ComposeDraft {
   // interval modu
   interval_value: number;
   interval_unit: IntervalUnit;
+  interval_time: string;  // "HH:MM" — gün/saat modlarında günün/saatin hangi noktasında fire
+
   // weekly modu
   weekdays: number[];            // 0=Paz, 1=Pzt, ..., 6=Cmt
   weekly_time: string;           // "HH:MM"
