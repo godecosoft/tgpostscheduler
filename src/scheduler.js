@@ -4,10 +4,119 @@ const { db } = require('./db');
 const { sendPost, deleteChannelMessage, notifyAdmin } = require('./bot');
 const { audit } = require('./audit');
 const { poolPick, mergePoolItem } = require('./pool');
+const { fetchChannelFeed, fetchSinglePostViews } = require('./viewScraper');
 
 // Otomatik retry ayarları
 const MAX_ATTEMPTS = 3; // bu kadar denemeden sonra kalıcı 'failed'
 const BACKOFF_MINUTES = [2, 5, 15]; // denemeler arası bekleme (backoff)
+
+// --- View takibi (t.me/s scraping) ayarları ---
+const VIEW_TRACKING_DAYS = Number(process.env.VIEW_TRACKING_DAYS) || 20; // postu kaç gün takip et
+const VIEW_SCRAPING_ON = process.env.DISABLE_VIEW_SCRAPING !== '1'; // '1' ile kapat
+const EMBED_FETCH_CAP = 25;   // tek çalışmada en fazla kaç eski post (embed) çekilsin
+const HTTP_THROTTLE_MS = 700;  // istekler arası nazik bekleme
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function reactionsTotal(json) {
+  try {
+    const m = json ? JSON.parse(json) : {};
+    return Object.values(m).reduce((a, b) => a + Number(b || 0), 0);
+  } catch {
+    return 0;
+  }
+}
+
+// Yaş katmanına göre bu post şu an güncellenmeli mi? (taze postlar sık, eskiler seyrek)
+function viewDue(sentAtISO, lastUpdateISO, nowMs) {
+  const sent = Date.parse((sentAtISO || '').replace(' ', 'T') + 'Z') || 0;
+  const last = lastUpdateISO ? (Date.parse((lastUpdateISO || '').replace(' ', 'T') + 'Z') || 0) : 0;
+  const ageH = (nowMs - sent) / 3.6e6;
+  const sinceMin = (nowMs - last) / 6e4;
+  if (ageH < 6) return sinceMin >= 15;   // ilk 6 saat: 15 dk'da bir
+  if (ageH < 48) return sinceMin >= 60;  // ilk 2 gün: saatte bir
+  return sinceMin >= 360;                // 20 güne kadar: 6 saatte bir
+}
+
+// Bir post için view'ı yaz: posts.views + değiştiyse zaman-serisi kaydı
+function saveViews(post, views) {
+  db.prepare(`UPDATE posts SET views = ?, last_stats_update = datetime('now') WHERE id = ?`).run(
+    views,
+    post.id,
+  );
+  if (views !== post.views) {
+    db.prepare(
+      `INSERT INTO post_stats_history (post_id, views, reactions_total) VALUES (?, ?, ?)`,
+    ).run(post.id, views, reactionsTotal(post.reactions));
+  }
+}
+
+let pollingViews = false;
+async function pollViews() {
+  if (!VIEW_SCRAPING_ON || pollingViews) return;
+  pollingViews = true;
+  try {
+    const nowMs = Date.now();
+    // Aday postlar: gönderilmiş, msg_id var, kanal public (username), pencere içinde
+    const candidates = db
+      .prepare(
+        `SELECT p.id, p.telegram_message_id AS mid, p.views, p.reactions, p.sent_at, p.last_stats_update,
+                c.username AS username
+         FROM posts p JOIN channels c ON c.id = p.channel_id
+         WHERE p.status = 'sent' AND p.telegram_message_id IS NOT NULL
+           AND c.username IS NOT NULL AND c.username != ''
+           AND p.sent_at >= datetime('now', ?)`,
+      )
+      .all(`-${VIEW_TRACKING_DAYS} days`)
+      .filter((p) => viewDue(p.sent_at, p.last_stats_update, nowMs));
+
+    if (!candidates.length) return;
+
+    // Kanala (username) göre grupla
+    const byChannel = new Map();
+    for (const p of candidates) {
+      if (!byChannel.has(p.username)) byChannel.set(p.username, []);
+      byChannel.get(p.username).push(p);
+    }
+
+    let embedBudget = EMBED_FETCH_CAP;
+    for (const [username, posts] of byChannel) {
+      // 1) Tek feed isteği son ~20 postu kapsar
+      let feed = new Map();
+      try {
+        feed = await fetchChannelFeed(username);
+      } catch (e) {
+        console.warn(`[views] feed hata @${username}: ${e.message}`);
+      }
+      await sleep(HTTP_THROTTLE_MS);
+
+      const older = [];
+      for (const p of posts) {
+        const v = feed.get(Number(p.mid));
+        if (v != null) saveViews(p, v);
+        else older.push(p); // feed penceresi dışında → embed ile
+      }
+
+      // 2) Feed'de olmayan eski postlar için tek tek embed (bütçeli)
+      for (const p of older) {
+        if (embedBudget <= 0) break;
+        embedBudget--;
+        try {
+          const v = await fetchSinglePostViews(username, p.mid);
+          if (v != null) saveViews(p, v);
+        } catch (e) {
+          console.warn(`[views] embed hata @${username}/${p.mid}: ${e.message}`);
+        }
+        await sleep(HTTP_THROTTLE_MS);
+      }
+    }
+    console.log(`[views] ${candidates.length} post güncellendi (${byChannel.size} kanal)`);
+  } catch (e) {
+    console.error('[views] pollViews hata:', e.message);
+  } finally {
+    pollingViews = false;
+  }
+}
 
 function nextRecurringDate(currentISO, recurring) {
   // Basit önayar tekrarları
@@ -252,6 +361,13 @@ function start() {
   cron.schedule('* * * * *', tick);
   console.log('[scheduler] Başlatıldı (her dakika kontrol ediyor)');
   tick(); // ilk açılışta hemen
+
+  // View takibi — 5 dakikada bir (yaş katmanı içeride hangi postun "due" olduğunu belirler)
+  if (VIEW_SCRAPING_ON) {
+    cron.schedule('*/5 * * * *', () => pollViews().catch((e) => console.error('[views] döngü:', e.message)));
+    console.log(`[scheduler] View takibi açık (t.me/s, ${VIEW_TRACKING_DAYS} gün pencere)`);
+    setTimeout(() => pollViews().catch(() => {}), 20_000); // açılıştan ~20sn sonra ilk tur
+  }
 }
 
 module.exports = { start, processPendingPosts, processAutoDeletes, nextCronDate };

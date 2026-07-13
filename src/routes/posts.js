@@ -186,6 +186,17 @@ router.get('/export.csv', (req, res) => {
   res.send(csv);
 });
 
+// Bir postun view/reaksiyon zaman serisi (raporlama/grafik için)
+router.get('/:id/history', (req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT strftime('%Y-%m-%dT%H:%M:%SZ', captured_at) AS at, views, reactions_total
+       FROM post_stats_history WHERE post_id = ? ORDER BY id ASC`,
+    )
+    .all(req.params.id);
+  res.json(rows);
+});
+
 router.get('/:id', (req, res) => {
   const post = db
     .prepare(
