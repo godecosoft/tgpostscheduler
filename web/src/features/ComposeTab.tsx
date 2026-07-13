@@ -57,11 +57,13 @@ interface Props {
   channels: Channel[];
   templates: Template[];
   editingPost?: Post | null;
+  presetDate?: string | null; // takvimden gelen ISO tarih — scheduled_at'e uygulanır
   onCancelEdit?: () => void;
 }
 
 const emptyDraft = (channelId: number | null): ComposeDraft => ({
   channel_id: channelId,
+  crossChannels: [],
   text: '',
   media_type: 'text',
   photo_path: null,
@@ -102,6 +104,7 @@ function postToDraft(p: Post): ComposeDraft {
   const parsed = p.cron_expression ? parseCronToSchedule(p.cron_expression) : { schedule_mode: 'oneoff' as const };
   return {
     channel_id: p.channel_id,
+    crossChannels: [],
     text: p.text || '',
     media_type: (p.media_type as MediaType) || 'text',
     photo_path: p.photo_path,
@@ -127,8 +130,19 @@ function postToDraft(p: Post): ComposeDraft {
   };
 }
 
-export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: Props) {
-  const [draft, setDraft] = useState<ComposeDraft>(emptyDraft(channels[0]?.id ?? null));
+const DRAFT_KEY = 'ars-compose-draft';
+
+export function ComposeTab({ channels, templates, editingPost, presetDate, onCancelEdit }: Props) {
+  // Taslak otomatik kayıt: localStorage'dan geri yükle (create modunda)
+  const [draft, setDraft] = useState<ComposeDraft>(() => {
+    if (!editingPost) {
+      try {
+        const saved = localStorage.getItem(DRAFT_KEY);
+        if (saved) return { ...emptyDraft(channels[0]?.id ?? null), ...JSON.parse(saved) };
+      } catch {}
+    }
+    return emptyDraft(channels[0]?.id ?? null);
+  });
   const [busy, setBusy] = useState(false);
   const createPost = useCreatePost();
   const updatePost = useUpdatePost();
@@ -153,6 +167,26 @@ export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: P
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [editingPost?.id]);
+
+  // Takvimden gelen tarih: create modunda scheduled_at'i ayarla (tek seferlik)
+  useEffect(() => {
+    if (presetDate && !editingPost) {
+      setDraft((d) => ({
+        ...d,
+        schedule_mode: 'oneoff',
+        scheduled_at: toLocalInputValue(new Date(presetDate)),
+      }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [presetDate, editingPost]);
+
+  // Taslak otomatik kayıt — create modunda her değişiklikte sakla
+  useEffect(() => {
+    if (editingPost) return; // düzenlerken taslak kaydetme
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [draft, editingPost]);
 
   const selectedChannel = channels.find((c) => c.id === draft.channel_id) || null;
 
@@ -416,9 +450,15 @@ export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: P
         toast.success('Güncellendi ✏️');
         onCancelEdit?.();
       } else {
-        const r = await createPost.mutateAsync(payload);
-        if (sendNow) {
-          await sendNowMutation.mutateAsync(r.id);
+        // Cross-post: birincil + ek kanallar (tekilleştir)
+        const targets = Array.from(new Set([draft.channel_id!, ...draft.crossChannels]));
+        for (const cid of targets) {
+          const r = await createPost.mutateAsync({ ...payload, channel_id: cid });
+          if (sendNow) await sendNowMutation.mutateAsync(r.id);
+        }
+        if (targets.length > 1) {
+          toast.success(`${targets.length} kanala ${sendNow ? 'gönderildi 🚀' : 'zamanlandı 📅'}`);
+        } else if (sendNow) {
           toast.success('Gönderildi! 🚀');
         } else {
           toast.success(
@@ -428,6 +468,7 @@ export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: P
       }
 
       setDraft(emptyDraft(draft.channel_id));
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -519,6 +560,45 @@ export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: P
               </div>
             </div>
           </div>
+
+          {/* Cross-post: aynı gönderiyi ek kanallara (yalnızca yeni gönderide) */}
+          {!editingPost && channels.length > 1 && (
+            <div className="space-y-2 rounded-lg border border-dashed p-3">
+              <Label className="text-xs">Ek kanallara da gönder (cross-post)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {channels
+                  .filter((c) => c.id !== draft.channel_id)
+                  .map((c) => {
+                    const on = draft.crossChannels.includes(c.id);
+                    return (
+                      <Button
+                        key={c.id}
+                        type="button"
+                        size="sm"
+                        variant={on ? 'default' : 'outline'}
+                        className="h-7 text-[11px]"
+                        onClick={() =>
+                          update(
+                            'crossChannels',
+                            on
+                              ? draft.crossChannels.filter((id) => id !== c.id)
+                              : [...draft.crossChannels, c.id],
+                          )
+                        }
+                      >
+                        {on ? '✓ ' : '+ '}
+                        {c.name}
+                      </Button>
+                    );
+                  })}
+              </div>
+              {draft.crossChannels.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Toplam <b>{draft.crossChannels.length + 1}</b> kanala gönderilecek.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Media area with drag & drop */}
           <div className="space-y-2">

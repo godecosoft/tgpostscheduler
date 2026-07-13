@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays, Pencil, Trash2, Send, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, Pencil, Trash2, Send, RotateCcw, Plus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import { useSendNow, useRetryPost, useDeletePost } from '@/hooks/usePosts';
 interface Props {
   posts: Post[];
   onEdit?: (post: Post) => void;
+  onCreate?: (date: Date) => void; // seçili güne yeni post oluştur
 }
 
 interface CalendarEvent {
@@ -35,7 +36,7 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
-export function CalendarTab({ posts, onEdit }: Props) {
+export function CalendarTab({ posts, onEdit, onCreate }: Props) {
   const [cursor, setCursor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
@@ -185,16 +186,23 @@ export function CalendarTab({ posts, onEdit }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            {selectedDay
-              ? selectedDay.toLocaleDateString('tr-TR', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })
-              : 'Bir gün seç'}
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">
+              {selectedDay
+                ? selectedDay.toLocaleDateString('tr-TR', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })
+                : 'Bir gün seç'}
+            </CardTitle>
+            {selectedDay && onCreate && (
+              <Button size="sm" onClick={() => onCreate(selectedDay)}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Post
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {!selectedDay && (

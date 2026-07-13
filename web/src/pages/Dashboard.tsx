@@ -31,14 +31,24 @@ export function DashboardPage() {
   const [showPw, setShowPw] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [presetDate, setPresetDate] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('compose');
 
   function startEdit(p: Post) {
     setEditingPost(p);
+    setPresetDate(null);
     setActiveTab('compose');
   }
   function cancelEdit() {
     setEditingPost(null);
+  }
+  function startCreateOn(date: Date) {
+    // Seçilen güne saat 12:00 varsayılan; ComposeTab bunu scheduled_at yapar
+    const d = new Date(date);
+    d.setHours(12, 0, 0, 0);
+    setEditingPost(null);
+    setPresetDate(d.toISOString());
+    setActiveTab('compose');
   }
 
   async function handleLogout() {
@@ -169,13 +179,14 @@ export function DashboardPage() {
                 channels={channels}
                 templates={templates}
                 editingPost={editingPost}
+                presetDate={presetDate}
                 onCancelEdit={cancelEdit}
               />
             )}
           </TabsContent>
 
           <TabsContent value="calendar">
-            <CalendarTab posts={posts} onEdit={startEdit} />
+            <CalendarTab posts={posts} onEdit={startEdit} onCreate={startCreateOn} />
           </TabsContent>
 
           <TabsContent value="stats">
@@ -187,6 +198,8 @@ export function DashboardPage() {
               posts={pending}
               onEdit={startEdit}
               showSendNow
+              filterable
+              channels={channels}
               emptyMessage="Bekleyen gönderi yok."
             />
           </TabsContent>
@@ -209,7 +222,7 @@ export function DashboardPage() {
                 </Button>
               )}
             </div>
-            <PostList posts={history} onEdit={startEdit} emptyMessage="Henüz gönderim yok." />
+            <PostList posts={history} onEdit={startEdit} filterable channels={channels} emptyMessage="Henüz gönderim yok." />
           </TabsContent>
 
           <TabsContent value="channels">

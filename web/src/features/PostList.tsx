@@ -1,10 +1,13 @@
+import { useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime } from '@/lib/utils';
-import type { Post } from '@/lib/types';
+import type { Post, Channel } from '@/lib/types';
 import {
   useSendNow, useRetryPost, useDeletePost, usePausePost, useResumePost,
 } from '@/hooks/usePosts';
@@ -14,7 +17,13 @@ interface Props {
   onEdit?: (post: Post) => void;
   showSendNow?: boolean;
   emptyMessage?: string;
+  // Arama + kanal filtresi + sayfalama (Zamanlanmış/Geçmiş için)
+  filterable?: boolean;
+  channels?: Channel[];
+  pageSize?: number;
 }
+
+const ALL_CHANNELS = '__all__';
 
 function statusBadge(status: Post['status']) {
   if (status === 'sent') return <Badge variant="success">Gönderildi</Badge>;
@@ -43,12 +52,28 @@ function mediaIcon(type: string | null | undefined) {
   );
 }
 
-export function PostList({ posts, onEdit, showSendNow, emptyMessage }: Props) {
+export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable, channels = [], pageSize = 25 }: Props) {
   const sendNowM = useSendNow();
   const retryM = useRetryPost();
   const deleteM = useDeletePost();
   const pauseM = usePausePost();
   const resumeM = useResumePost();
+
+  const [search, setSearch] = useState('');
+  const [channelId, setChannelId] = useState<string>(ALL_CHANNELS);
+  const [visible, setVisible] = useState(pageSize);
+
+  const filtered = useMemo(() => {
+    if (!filterable) return posts;
+    const q = search.trim().toLowerCase();
+    return posts.filter((p) => {
+      if (channelId !== ALL_CHANNELS && String(p.channel_id) !== channelId) return false;
+      if (q && !(p.text || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [posts, filterable, search, channelId]);
+
+  const shown = filterable ? filtered.slice(0, visible) : filtered;
 
   async function sendNow(id: number) {
     try {
@@ -96,17 +121,47 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage }: Props) {
     }
   }
 
-  if (posts.length === 0) {
+  const filterBar = filterable ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-[200px] flex-1">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setVisible(pageSize); }}
+          placeholder="Metinde ara…"
+          className="pl-8"
+        />
+      </div>
+      {channels.length > 0 && (
+        <Select value={channelId} onValueChange={(v) => { setChannelId(v); setVisible(pageSize); }}>
+          <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_CHANNELS}>Tüm kanallar</SelectItem>
+            {channels.map((c) => (
+              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      <span className="text-xs text-muted-foreground">{filtered.length} kayıt</span>
+    </div>
+  ) : null;
+
+  if (posts.length === 0 || (filterable && filtered.length === 0)) {
     return (
-      <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-        {emptyMessage || 'Kayıt yok.'}
+      <div className="space-y-3">
+        {filterBar}
+        <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
+          {posts.length === 0 ? (emptyMessage || 'Kayıt yok.') : 'Filtreye uyan kayıt yok.'}
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {posts.map((p) => {
+      {filterBar}
+      {shown.map((p) => {
         let buttonRows: any[][] = [];
         try {
           buttonRows = p.buttons ? JSON.parse(p.buttons) : [];
@@ -243,6 +298,14 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage }: Props) {
           </Card>
         );
       })}
+
+      {filterable && filtered.length > shown.length && (
+        <div className="pt-1 text-center">
+          <Button variant="outline" size="sm" onClick={() => setVisible((v) => v + pageSize)}>
+            Daha fazla göster ({filtered.length - shown.length} kaldı)
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

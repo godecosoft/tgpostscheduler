@@ -89,6 +89,7 @@ export type IntervalUnit = 'minute' | 'hour' | 'day';
 
 export interface ComposeDraft {
   channel_id: number | null;
+  crossChannels: number[]; // cross-post: ek hedef kanallar (create modunda)
   text: string;
   media_type: MediaType;
   photo_path: string | null;

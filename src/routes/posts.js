@@ -125,13 +125,17 @@ router.post('/upload-multi', upload.array('files', 10), (req, res) => {
 });
 
 router.get('/', (req, res) => {
-  const { status, channel_id } = req.query;
+  const { status, channel_id, q } = req.query;
+  const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 1000));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
   let sql = `SELECT p.*, c.name as channel_name, c.username as channel_username
              FROM posts p JOIN channels c ON c.id = p.channel_id WHERE 1=1`;
   const params = [];
   if (status) { sql += ' AND p.status = ?'; params.push(status); }
   if (channel_id) { sql += ' AND p.channel_id = ?'; params.push(channel_id); }
-  sql += ' ORDER BY p.scheduled_at DESC LIMIT 200';
+  if (q) { sql += ' AND p.text LIKE ?'; params.push('%' + q + '%'); }
+  sql += ' ORDER BY p.scheduled_at DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
   res.json(db.prepare(sql).all(...params));
 });
 
