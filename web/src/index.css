@@ -39,11 +39,40 @@
   }
 
   * { @apply border-border; }
+  html {
+    scrollbar-color: #998a5e transparent;
+    scrollbar-width: thin;
+  }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     font-feature-settings: 'rlig' 1, 'calt' 1;
     font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
       'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+    /* Düz siyah yerine çok hafif altın ambiyans — derinlik hissi */
+    background-image:
+      radial-gradient(circle at 12% -5%, rgba(245, 200, 114, 0.055) 0, transparent 30%),
+      radial-gradient(circle at 100% 108%, rgba(206, 141, 54, 0.05) 0, transparent 38%);
+    background-attachment: fixed;
+  }
+
+  /* Metin seçimi — altın vurgu */
+  ::selection {
+    background: rgba(245, 200, 114, 0.3);
+    color: #fff0a3;
+  }
+
+  /* Webkit scrollbar — ince, altın tonlu */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #ce8d36, #998a5e);
+    border-radius: 8px;
+    border: 2px solid #070708;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #f5c872, #ce8d36);
   }
 }
 

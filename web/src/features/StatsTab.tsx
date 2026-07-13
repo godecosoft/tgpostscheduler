@@ -75,7 +75,7 @@ export function StatsTab() {
         <StatCard label="Gönderildi" value={data.totals.sent} icon={TrendingUp} color="text-emerald-500" />
         <StatCard label="Bekleyen" value={data.totals.pending} icon={RefreshCw} color="text-amber-500" />
         <StatCard label="Başarısız" value={data.totals.failed} icon={AlertCircle} color="text-destructive" />
-        <StatCard label="Toplam Görüntülenme" value={data.totals.total_views.toLocaleString('tr-TR')} icon={Eye} color="text-blue-500" />
+        <StatCard label="Toplam Görüntülenme" value={data.totals.total_views.toLocaleString('tr-TR')} icon={Eye} color="text-primary" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -95,8 +95,8 @@ export function StatsTab() {
                 <AreaChart data={series}>
                   <defs>
                     <linearGradient id="gradViews" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.5} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#f5c872" stopOpacity={0.5} />
+                      <stop offset="95%" stopColor="#f5c872" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="gradReactions" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.5} />
@@ -115,7 +115,7 @@ export function StatsTab() {
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area type="monotone" dataKey="views" name="Görüntülenme" stroke="#3b82f6" fill="url(#gradViews)" />
+                  <Area type="monotone" dataKey="views" name="Görüntülenme" stroke="#f5c872" fill="url(#gradViews)" />
                   <Area type="monotone" dataKey="reactions" name="Reactions" stroke="#f43f5e" fill="url(#gradReactions)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -146,7 +146,7 @@ export function StatsTab() {
                       fontSize: 12,
                     }}
                   />
-                  <Bar dataKey="posts" name="Post" fill="#10b981" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="posts" name="Post" fill="#ce8d36" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
