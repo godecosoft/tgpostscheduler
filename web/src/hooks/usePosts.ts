@@ -23,6 +23,9 @@ export interface PostPayload {
   // Recurring seri limitleri (yalnızca tekrarlı modda dolu)
   max_occurrences?: number | null;
   recurrence_end?: string | null;
+  // İçerik havuzu (yalnızca tekrarlı modda)
+  pool_id?: number | null;
+  pool_rotation?: string | null;
 }
 
 function invalidatePostsAndStats(qc: ReturnType<typeof useQueryClient>) {

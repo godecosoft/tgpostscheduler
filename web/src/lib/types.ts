@@ -73,6 +73,9 @@ export interface Post {
   max_occurrences: number | null;
   recurrence_end: string | null;
   attempts?: number;
+  // İçerik havuzu
+  pool_id: number | null;
+  pool_rotation: PoolRotation | null;
 }
 
 export interface Template {
@@ -84,6 +87,29 @@ export interface Template {
   photo_path: string | null;
   media_type: MediaType | null;
   created_at: string;
+}
+
+export type PoolRotation = 'sequential' | 'random';
+
+export interface PoolItem {
+  id: number;
+  pool_id: number;
+  text: string | null;
+  photo_path: string | null;
+  media_type: MediaType | null;
+  media_group: string | null;
+  buttons: string | null;
+  position: number;
+  created_at: string;
+}
+
+export interface Pool {
+  id: number;
+  name: string;
+  cursor: number;
+  created_at: string;
+  item_count?: number;    // liste endpoint'inde
+  items?: PoolItem[];     // tekil endpoint'inde
 }
 
 export type ScheduleMode = 'oneoff' | 'interval' | 'weekly' | 'monthly' | 'custom';
@@ -120,6 +146,9 @@ export interface ComposeDraft {
   // Recurring seri limitleri (oneoff dışında)
   max_occurrences: number | null; // null = sınırsız
   recurrence_end: string;          // datetime-local ("" = yok)
+  // İçerik havuzu (yalnızca tekrarlı modda)
+  pool_id: number | null;
+  pool_rotation: PoolRotation;
 
   auto_delete_minutes: number | null;
   silent: boolean;

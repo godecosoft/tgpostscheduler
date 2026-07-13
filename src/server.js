@@ -15,6 +15,7 @@ const channelsRouter = require('./routes/channels');
 const postsRouter = require('./routes/posts');
 const statsRouter = require('./routes/stats');
 const auditRouter = require('./routes/audit');
+const poolsRouter = require('./routes/pools');
 const { router: templatesRouter, seedDefaults } = require('./routes/templates');
 
 const app = express();
@@ -78,6 +79,7 @@ app.use('/api/posts', requireAuth, postsRouter);
 app.use('/api/templates', requireAuth, templatesRouter);
 app.use('/api/stats', requireAuth, statsRouter);
 app.use('/api/audit', requireAuth, auditRouter);
+app.use('/api/pools', requireAuth, poolsRouter);
 
 // Yüklenen dosyalar (auth gerektirir) — env ile override edilebilir (Railway volume)
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads');

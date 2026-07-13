@@ -102,6 +102,33 @@ safeAddColumn('posts', 'occurrence_num', 'INTEGER DEFAULT 1'); // bu, serinin ka
 safeAddColumn('posts', 'max_occurrences', 'INTEGER'); // NULL = sınırsız; N kez sonra dur
 safeAddColumn('posts', 'recurrence_end', 'TEXT'); // ISO tarih; bu tarihten sonra üretme
 
+// İçerik havuzu — tekrarlı postlar havuzdan sırayla/rastgele içerik çeker
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pools (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    cursor INTEGER DEFAULT 0,   -- sıralı rotasyon için bir sonraki öğe indeksi
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS pool_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pool_id INTEGER NOT NULL,
+    text TEXT,
+    photo_path TEXT,
+    media_type TEXT,
+    media_group TEXT,
+    buttons TEXT,
+    position INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (pool_id) REFERENCES pools(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_pool_items_pool ON pool_items(pool_id, position);
+`);
+
+// Bir tekrarlı postu bir havuza bağla
+safeAddColumn('posts', 'pool_id', 'INTEGER');
+safeAddColumn('posts', 'pool_rotation', "TEXT"); // sequential | random
+
 // Denetim günlüğü (audit log) — kim ne yaptı
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (

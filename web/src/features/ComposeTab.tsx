@@ -26,6 +26,7 @@ import {
 } from '@/lib/schedule';
 import { useCreatePost, useUpdatePost, useSendNow } from '@/hooks/usePosts';
 import { useCreateTemplate } from '@/hooks/useTemplates';
+import { usePools } from '@/hooks/usePools';
 import { useHealth } from '@/hooks/useSystem';
 import { TelegramPreview } from './TelegramPreview';
 
@@ -83,6 +84,8 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
   time_range_minutes: 0,
   max_occurrences: null,
   recurrence_end: '',
+  pool_id: null,
+  pool_rotation: 'sequential',
   auto_delete_minutes: null,
   silent: false,
   disable_preview: false,
@@ -124,6 +127,8 @@ function postToDraft(p: Post): ComposeDraft {
     time_range_minutes: p.time_range_minutes || 0,
     max_occurrences: p.max_occurrences ?? null,
     recurrence_end: p.recurrence_end ? toLocalInputValue(new Date(p.recurrence_end)) : '',
+    pool_id: p.pool_id ?? null,
+    pool_rotation: p.pool_rotation ?? 'sequential',
     auto_delete_minutes: p.auto_delete_minutes,
     silent: !!p.silent,
     disable_preview: !!p.disable_preview,
@@ -148,6 +153,7 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
   const updatePost = useUpdatePost();
   const sendNowMutation = useSendNow();
   const createTemplate = useCreateTemplate();
+  const { data: pools = [] } = usePools();
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const multiFileRef = useRef<HTMLInputElement>(null);
@@ -393,11 +399,12 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
 
   async function submit(sendNow: boolean) {
     if (!draft.channel_id) return toast.error('Kanal seçin');
-    const hasMedia = !!draft.photo_url || draft.media_group.length > 0;
-    if (!draft.text.trim() && !hasMedia) return toast.error('Metin veya görsel ekleyin');
-
     // Cron expression hesapla (oneoff dışında)
     const cron = buildCron(draft);
+    const usePool = !!cron && !!draft.pool_id; // havuz yalnızca tekrarlı modda anlamlı
+
+    const hasMedia = !!draft.photo_url || draft.media_group.length > 0;
+    if (!usePool && !draft.text.trim() && !hasMedia) return toast.error('Metin veya görsel ekleyin');
 
     // Validation: weekly modda en az 1 gün seçili olmalı
     if (draft.schedule_mode === 'weekly' && draft.weekdays.length === 0) {
@@ -453,6 +460,9 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
         // Seri limitleri sadece tekrarlı modda gönderilir
         max_occurrences: cron && draft.max_occurrences ? Number(draft.max_occurrences) : null,
         recurrence_end: cron && draft.recurrence_end ? localInputToISO(draft.recurrence_end) : null,
+        // İçerik havuzu (yalnızca tekrarlı modda)
+        pool_id: usePool ? draft.pool_id : null,
+        pool_rotation: usePool ? draft.pool_rotation : null,
       };
 
       if (editingPost) {
@@ -1082,6 +1092,62 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
                 </p>
               )}
             </div>
+
+            {/* İçerik havuzu — sadece tekrarlı modlarda */}
+            {draft.schedule_mode !== 'oneoff' && (
+              <div className="space-y-2 rounded-md border border-dashed border-primary/40 bg-primary/5 p-2.5">
+                <label className="flex items-center gap-2 text-xs font-medium">
+                  <Checkbox
+                    checked={!!draft.pool_id}
+                    onCheckedChange={(v) =>
+                      update('pool_id', v ? (pools[0]?.id ?? null) : null)
+                    }
+                  />
+                  <Layers className="h-3.5 w-3.5" /> İçerik havuzundan gönder
+                </label>
+                {draft.pool_id != null && (
+                  pools.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Henüz havuz yok — "Havuzlar" sekmesinden oluştur.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <Select
+                        value={draft.pool_id ? String(draft.pool_id) : ''}
+                        onValueChange={(v) => update('pool_id', Number(v))}
+                      >
+                        <SelectTrigger><SelectValue placeholder="Havuz seç" /></SelectTrigger>
+                        <SelectContent>
+                          {pools.map((p) => (
+                            <SelectItem key={p.id} value={String(p.id)}>
+                              {p.name} ({p.item_count ?? 0} öğe)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex gap-1.5">
+                        {(['sequential', 'random'] as const).map((r) => (
+                          <Button
+                            key={r}
+                            type="button"
+                            size="sm"
+                            variant={draft.pool_rotation === r ? 'default' : 'outline'}
+                            className="h-7 text-[11px]"
+                            onClick={() => update('pool_rotation', r)}
+                          >
+                            {r === 'sequential' ? '🔁 Sırayla' : '🎲 Rastgele'}
+                          </Button>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Her gönderimde havuzdan {draft.pool_rotation === 'random' ? 'rastgele' : 'sıradaki'} içerik
+                        atılır. Yukarıdaki metin/medya alanları yok sayılır.
+                      </p>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
 
             {/* Seri limitleri — sadece tekrarlı modlarda */}
             {draft.schedule_mode !== 'oneoff' && (

@@ -5,6 +5,7 @@ const fs = require('fs');
 const { db } = require('../db');
 const { sendPost } = require('../bot');
 const { audit, actorOf } = require('../audit');
+const { poolPick, mergePoolItem } = require('../pool');
 
 const router = express.Router();
 
@@ -202,10 +203,12 @@ router.post('/', (req, res) => {
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
     time_range_minutes, max_occurrences, recurrence_end,
+    pool_id, pool_rotation,
   } = req.body || {};
 
-  if (!channel_id || (!text && !photo_path && !media_group) || !scheduled_at) {
-    return res.status(400).json({ error: 'channel_id, text/medya, scheduled_at zorunlu' });
+  // Havuz bağlıysa metin/medya zorunlu değil (içerik havuzdan gelir)
+  if (!channel_id || (!pool_id && !text && !photo_path && !media_group) || !scheduled_at) {
+    return res.status(400).json({ error: 'channel_id, text/medya (ya da havuz), scheduled_at zorunlu' });
   }
   const channel = db.prepare('SELECT id FROM channels WHERE id = ?').get(channel_id);
   if (!channel) return res.status(400).json({ error: 'Kanal bulunamadı' });
@@ -214,8 +217,8 @@ router.post('/', (req, res) => {
     .prepare(
       `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
        scheduled_at, recurring, media_type, media_group, cron_expression, auto_delete_minutes,
-       time_range_minutes, occurrence_num, max_occurrences, recurrence_end)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+       time_range_minutes, occurrence_num, max_occurrences, recurrence_end, pool_id, pool_rotation)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
     )
     .run(
       channel_id,
@@ -234,6 +237,8 @@ router.post('/', (req, res) => {
       time_range_minutes ? Number(time_range_minutes) : 0,
       max_occurrences ? Number(max_occurrences) : null,
       recurrence_end || null,
+      pool_id ? Number(pool_id) : null,
+      pool_id ? (pool_rotation || 'sequential') : null,
     );
   // Tekrarlı seri ise kendi id'sini series_id yap (occurrence'lar bunu paylaşır)
   if (cron_expression || recurring) {
@@ -256,13 +261,14 @@ router.put('/:id', (req, res) => {
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
     time_range_minutes, max_occurrences, recurrence_end,
+    pool_id, pool_rotation,
   } = req.body || {};
 
   db.prepare(
     `UPDATE posts SET channel_id = ?, text = ?, photo_path = ?, buttons = ?, parse_mode = ?,
      disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?,
      media_type = ?, media_group = ?, cron_expression = ?, auto_delete_minutes = ?,
-     time_range_minutes = ?, max_occurrences = ?, recurrence_end = ?,
+     time_range_minutes = ?, max_occurrences = ?, recurrence_end = ?, pool_id = ?, pool_rotation = ?,
      status = 'pending', error = NULL, attempts = 0
      WHERE id = ?`,
   ).run(
@@ -282,6 +288,8 @@ router.put('/:id', (req, res) => {
     time_range_minutes != null ? Number(time_range_minutes) : (post.time_range_minutes || 0),
     max_occurrences !== undefined ? (max_occurrences ? Number(max_occurrences) : null) : post.max_occurrences,
     recurrence_end !== undefined ? (recurrence_end || null) : post.recurrence_end,
+    pool_id !== undefined ? (pool_id ? Number(pool_id) : null) : post.pool_id,
+    pool_id !== undefined ? (pool_id ? (pool_rotation || 'sequential') : null) : post.pool_rotation,
     req.params.id,
   );
   audit(actorOf(req), 'post.update', 'post', req.params.id, null);
@@ -346,7 +354,18 @@ router.post('/:id/send-now', async (req, res) => {
 
   try {
     const channel = { chat_id: post.channel_chat_id, name: post.channel_name };
-    const result = await sendPost(post, channel);
+
+    // Havuz bağlıysa içeriği havuzdan çöz
+    let poolPickRes = null;
+    let sendable = post;
+    if (post.pool_id) {
+      poolPickRes = poolPick(post.pool_id, post.pool_rotation);
+      if (!poolPickRes) throw new Error('İçerik havuzu boş ya da bulunamadı');
+      sendable = mergePoolItem(post, poolPickRes.item);
+    }
+
+    const result = await sendPost(sendable, channel);
+    if (poolPickRes) poolPickRes.advance();
     const messageId = Array.isArray(result)
       ? result[0]?.message_id || null
       : result?.message_id || null;

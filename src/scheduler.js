@@ -3,6 +3,7 @@ const cronParser = require('cron-parser');
 const { db } = require('./db');
 const { sendPost, deleteChannelMessage, notifyAdmin } = require('./bot');
 const { audit } = require('./audit');
+const { poolPick, mergePoolItem } = require('./pool');
 
 // Otomatik retry ayarları
 const MAX_ATTEMPTS = 3; // bu kadar denemeden sonra kalıcı 'failed'
@@ -56,7 +57,17 @@ async function processPendingPosts() {
 
     try {
       const channel = { chat_id: post.channel_chat_id, name: post.channel_name };
-      const result = await sendPost(post, channel);
+
+      // Havuz bağlıysa içeriği havuzdan çöz (sıralı/rastgele)
+      let poolPickRes = null;
+      let sendable = post;
+      if (post.pool_id) {
+        poolPickRes = poolPick(post.pool_id, post.pool_rotation);
+        if (!poolPickRes) throw new Error('İçerik havuzu boş ya da bulunamadı');
+        sendable = mergePoolItem(post, poolPickRes.item);
+      }
+
+      const result = await sendPost(sendable, channel);
       // Media group → array of messages, ilk message_id'yi sakla
       const messageId = Array.isArray(result)
         ? result[0]?.message_id || null
@@ -74,6 +85,7 @@ async function processPendingPosts() {
         `UPDATE posts SET status = 'sent', sent_at = datetime('now'),
          telegram_message_id = ?, error = NULL, delete_at = ? WHERE id = ?`,
       ).run(messageId, deleteAt, post.id);
+      if (poolPickRes) poolPickRes.advance(); // sıralı havuzda imleci ilerlet
       audit('system', 'post.send', 'post', post.id, `${post.channel_name} (zamanlı)`);
       console.log(`[scheduler] Gönderildi: post #${post.id} → ${post.channel_name}`);
 
@@ -111,8 +123,9 @@ async function processPendingPosts() {
         db.prepare(
           `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
            scheduled_at, recurring, cron_expression, auto_delete_minutes, media_type, media_group,
-           time_range_minutes, series_id, occurrence_num, max_occurrences, recurrence_end)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           time_range_minutes, series_id, occurrence_num, max_occurrences, recurrence_end,
+           pool_id, pool_rotation)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           post.channel_id,
           post.text,
@@ -132,6 +145,8 @@ async function processPendingPosts() {
           thisOccurrence + 1,
           post.max_occurrences || null,
           post.recurrence_end || null,
+          post.pool_id || null,
+          post.pool_rotation || null,
         );
       }
     } catch (err) {

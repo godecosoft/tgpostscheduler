@@ -212,6 +212,11 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
                         <CalendarX className="h-3 w-3" /> bitiş: {formatDateTime(p.recurrence_end)}
                       </Badge>
                     )}
+                    {p.pool_id && (
+                      <Badge variant="secondary" className="gap-1">
+                        {p.pool_rotation === 'random' ? '🎲' : '🔁'} havuz
+                      </Badge>
+                    )}
                     {p.delete_at && p.status === 'sent' && (
                       <Badge variant="destructive" className="gap-1">
                         <Clock className="h-3 w-3" /> Silinecek: {formatDateTime(p.delete_at)}

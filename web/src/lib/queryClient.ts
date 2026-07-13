@@ -24,4 +24,6 @@ export const qk = {
   stats: ['stats', 'dashboard'] as const,
   audit: ['audit'] as const,
   health: ['health'] as const,
+  pools: ['pools'] as const,
+  pool: (id: number) => ['pools', id] as const,
 };
