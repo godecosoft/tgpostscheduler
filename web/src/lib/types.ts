@@ -156,6 +156,7 @@ export interface ComposeDraft {
 }
 
 export interface DashboardStats {
+  days: number;
   totals: {
     total_posts: number;
     sent: number;
@@ -176,5 +177,15 @@ export interface DashboardStats {
     media_type: MediaType | null;
     telegram_message_id: number | null;
   }[];
-  perChannel: { id: number; name: string; username: string | null; posts: number; views: number }[];
+  perChannel: {
+    id: number; name: string; username: string | null;
+    posts: number; views: number; avg_views: number;
+  }[];
+}
+
+// Post zaman serisi (view/reaksiyon trendi)
+export interface PostHistoryPoint {
+  at: string;
+  views: number;
+  reactions_total: number;
 }

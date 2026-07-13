@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { qk } from '@/lib/queryClient';
-import type { ButtonGrid, MediaType, Post } from '@/lib/types';
+import type { ButtonGrid, MediaType, Post, PostHistoryPoint } from '@/lib/types';
 
 // Backend'in /api/posts POST & PUT için beklediği gövde.
 // Not: media_group/buttons burada henüz JSON string'e çevrilmemiş — api katmanı stringliyor.
@@ -39,6 +39,16 @@ export function usePosts() {
     queryFn: () => api.get<Post[]>('/api/posts'),
     // Pending → sent/failed geçişlerini elle yenilemeden görebilmek için
     refetchInterval: 30_000,
+  });
+}
+
+// Bir postun view/reaksiyon zaman serisi (trend grafiği için)
+export function usePostHistory(id: number | null, enabled = true) {
+  return useQuery({
+    queryKey: ['posts', id, 'history'],
+    queryFn: () => api.get<PostHistoryPoint[]>(`/api/posts/${id}/history`),
+    enabled: enabled && !!id,
+    refetchInterval: 60_000,
   });
 }
 

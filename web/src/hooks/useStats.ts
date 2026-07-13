@@ -3,10 +3,10 @@ import { api } from '@/lib/api';
 import { qk } from '@/lib/queryClient';
 import type { DashboardStats } from '@/lib/types';
 
-export function useStats() {
+export function useStats(days = 7) {
   return useQuery({
-    queryKey: qk.stats,
-    queryFn: () => api.get<DashboardStats>('/api/stats/dashboard'),
+    queryKey: [...qk.stats, days],
+    queryFn: () => api.get<DashboardStats>(`/api/stats/dashboard?days=${days}`),
     refetchInterval: 60_000,
   });
 }

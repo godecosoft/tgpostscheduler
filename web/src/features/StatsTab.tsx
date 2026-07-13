@@ -27,8 +27,15 @@ function StatCard({
   );
 }
 
+const RANGES = [
+  { d: 7, label: '7 gün' },
+  { d: 30, label: '30 gün' },
+  { d: 90, label: '90 gün' },
+];
+
 export function StatsTab() {
-  const { data, isLoading, isError, error, refetch } = useStats();
+  const [range, setRange] = useState(7);
+  const { data, isLoading, isError, error, refetch } = useStats(range);
 
   if (isLoading) {
     return (
@@ -58,15 +65,32 @@ export function StatsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-xl font-semibold">📊 Dashboard</h2>
-          <p className="text-sm text-muted-foreground">Son 7 günün performans özetı</p>
+          <p className="text-sm text-muted-foreground">Son {range} günün performans özeti</p>
         </div>
-        <Button variant="outline" size="sm" onClick={load}>
-          <RefreshCw className="mr-2 h-3.5 w-3.5" />
-          Yenile
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1">
+            {RANGES.map((r) => (
+              <Button
+                key={r.d}
+                size="sm"
+                variant={range === r.d ? 'default' : 'outline'}
+                onClick={() => setRange(r.d)}
+              >
+                {r.label}
+              </Button>
+            ))}
+          </div>
+          <a href={`/api/posts/export.csv?status=sent`} download>
+            <Button variant="outline" size="sm">CSV</Button>
+          </a>
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            Yenile
+          </Button>
+        </div>
       </div>
 
       {/* Toplamlar */}
@@ -82,7 +106,7 @@ export function StatsTab() {
         {/* Görüntülenme grafiği */}
         <Card>
           <CardHeader>
-            <CardTitle>Son 7 gün — Görüntülenme & Reaction</CardTitle>
+            <CardTitle>Son {range} gün — Görüntülenme & Reaction</CardTitle>
             <CardDescription>Günlük toplam view + reaction sayısı</CardDescription>
           </CardHeader>
           <CardContent>
@@ -220,11 +244,14 @@ export function StatsTab() {
                   {c.username && <div className="text-xs text-muted-foreground">@{c.username}</div>}
                 </div>
                 <div className="flex items-center gap-4 text-xs">
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1" title="Post sayısı">
                     <Send className="h-3 w-3" /> {c.posts}
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1" title="Toplam görüntülenme">
                     <Eye className="h-3 w-3 text-blue-400" /> {c.views.toLocaleString('tr-TR')}
+                  </span>
+                  <span className="text-muted-foreground" title="Post başına ortalama görüntülenme">
+                    ort. {(c.avg_views || 0).toLocaleString('tr-TR')}
                   </span>
                 </div>
               </div>

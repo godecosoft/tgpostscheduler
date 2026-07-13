@@ -4,13 +4,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX, Search } from 'lucide-react';
+import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX, Search, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime } from '@/lib/utils';
 import type { Post, Channel } from '@/lib/types';
 import {
   useSendNow, useRetryPost, useDeletePost, usePausePost, useResumePost,
 } from '@/hooks/usePosts';
+import { PostTrendChart } from './PostTrendChart';
 
 interface Props {
   posts: Post[];
@@ -62,6 +63,7 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
   const [search, setSearch] = useState('');
   const [channelId, setChannelId] = useState<string>(ALL_CHANNELS);
   const [visible, setVisible] = useState(pageSize);
+  const [trendOpen, setTrendOpen] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     if (!filterable) return posts;
@@ -294,11 +296,26 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
                       <Play className="mr-1 h-3.5 w-3.5" /> Devam Et
                     </Button>
                   )}
+                  {p.status === 'sent' && (
+                    <Button
+                      size="sm"
+                      variant={trendOpen === p.id ? 'default' : 'outline'}
+                      onClick={() => setTrendOpen(trendOpen === p.id ? null : p.id)}
+                    >
+                      <TrendingUp className="mr-1 h-3.5 w-3.5" /> Trend
+                    </Button>
+                  )}
                   <Button size="sm" variant="ghost" onClick={() => remove(p.id)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
+
+              {trendOpen === p.id && p.status === 'sent' && (
+                <div className="mt-3 border-t pt-2">
+                  <PostTrendChart postId={p.id} />
+                </div>
+              )}
             </CardContent>
           </Card>
         );

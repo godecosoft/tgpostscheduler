@@ -3,9 +3,12 @@ const { db } = require('./../db');
 
 const router = express.Router();
 
-// Genel sayaçlar + son 7 gün grafik datası + top 5 post
-router.get('/dashboard', (_req, res) => {
-  // Toplamlar
+// Genel sayaçlar + seçilen aralıkta grafik datası + top postlar
+router.get('/dashboard', (req, res) => {
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 7));
+  const since = `-${days} days`;
+
+  // Toplamlar (her zaman genel)
   const totals = db
     .prepare(
       `SELECT
@@ -19,66 +22,55 @@ router.get('/dashboard', (_req, res) => {
     )
     .get();
 
-  // Son 7 gün — gönderilmiş post sayısı + reaction toplamı (sent_at bazında)
+  // Aralıkta — gönderilmiş post sayısı + o gün atılan postların view toplamı
   const lastWeek = db
     .prepare(
-      `SELECT
-        date(sent_at) AS day,
-        COUNT(*) AS posts,
-        COALESCE(SUM(views), 0) AS views
+      `SELECT date(sent_at) AS day, COUNT(*) AS posts, COALESCE(SUM(views), 0) AS views
        FROM posts
-       WHERE status='sent' AND sent_at >= datetime('now', '-7 days')
-       GROUP BY day
-       ORDER BY day ASC`,
+       WHERE status='sent' AND sent_at >= datetime('now', ?)
+       GROUP BY day ORDER BY day ASC`,
     )
-    .all();
+    .all(since);
 
   // Reaction trendi (post_stats_history'den)
   const reactionsTrend = db
     .prepare(
-      `SELECT
-        date(captured_at) AS day,
-        COALESCE(SUM(reactions_total), 0) AS reactions
+      `SELECT date(captured_at) AS day, COALESCE(SUM(reactions_total), 0) AS reactions
        FROM post_stats_history
-       WHERE captured_at >= datetime('now', '-7 days')
-       GROUP BY day
-       ORDER BY day ASC`,
+       WHERE captured_at >= datetime('now', ?)
+       GROUP BY day ORDER BY day ASC`,
     )
-    .all();
+    .all(since);
 
-  // Top performing posts (son 30 gün)
+  // Top performing posts (aralıkta)
   const topPosts = db
     .prepare(
       `SELECT p.id, p.text, p.sent_at, p.views, p.reactions, c.name AS channel_name,
               p.media_type, p.telegram_message_id
        FROM posts p
        JOIN channels c ON c.id = p.channel_id
-       WHERE p.status='sent' AND p.sent_at >= datetime('now', '-30 days')
+       WHERE p.status='sent' AND p.sent_at >= datetime('now', ?)
        ORDER BY (COALESCE(p.views,0) + COALESCE(LENGTH(p.reactions),0) * 5) DESC
-       LIMIT 5`,
+       LIMIT 8`,
     )
-    .all();
+    .all(since);
 
-  // Kanal başına performans
+  // Kanal başına performans (aralıkta): post sayısı, view toplamı, ortalama view
   const perChannel = db
     .prepare(
       `SELECT c.id, c.name, c.username,
               COUNT(p.id) AS posts,
-              COALESCE(SUM(p.views), 0) AS views
+              COALESCE(SUM(p.views), 0) AS views,
+              CAST(COALESCE(AVG(p.views), 0) AS INTEGER) AS avg_views
        FROM channels c
        LEFT JOIN posts p ON p.channel_id = c.id AND p.status='sent'
+            AND p.sent_at >= datetime('now', ?)
        GROUP BY c.id
        ORDER BY views DESC`,
     )
-    .all();
+    .all(since);
 
-  res.json({
-    totals,
-    lastWeek,
-    reactionsTrend,
-    topPosts,
-    perChannel,
-  });
+  res.json({ days, totals, lastWeek, reactionsTrend, topPosts, perChannel });
 });
 
 // Manuel view count girişi (Bot API view'i bot'a vermediği için
