@@ -92,6 +92,33 @@ function init() {
         fallback: text.substring(e.offset, e.offset + e.length),
       }));
 
+    // Bot API'nin eski (forward_from_chat) ve yeni (forward_origin) alanlarını kontrol et
+    const fwdChat = msg.forward_from_chat || msg.forward_origin?.chat || null;
+    const fwdUser = msg.forward_from || msg.forward_origin?.sender_user || null;
+
+    // ÖNCELİK: iletilen mesaj bir kanal/gruptan geldiyse HER ZAMAN önce kanal ID'sini ver.
+    // (Emoji kontrolünden önce olmalı — yoksa premium emoji içeren kanal postu
+    //  iletildiğinde bot kanal ID yerine emoji ID gösterirdi.)
+    if (fwdChat) {
+      const lines = [
+        '✅ <b>İletilen mesajın kaynağı bulundu</b>',
+        '',
+        `📡 Chat ID: <code>${fwdChat.id}</code>`,
+        `Tür: <code>${fwdChat.type}</code>`,
+        fwdChat.title ? `İsim: ${escapeHtml(fwdChat.title)}` : '',
+        fwdChat.username ? `Kullanıcı adı: @${fwdChat.username}` : '',
+        '',
+        '👉 Bu ID\'yi web panelde "Kanallar → Yeni Kanal" ekranına yapıştırabilirsin.',
+        '',
+        '<i>Not: Botu da kanalın yöneticisi olarak eklemeyi unutma — yoksa mesaj gönderemez.</i>',
+        customEmojis.length > 0
+          ? `\n✨ <i>Bu mesajda ${customEmojis.length} premium emoji de var. ID'leri için mesajı buraya (forward değil) düz kopyalayıp gönder.</i>`
+          : '',
+      ].filter(Boolean).join('\n');
+      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
+      return;
+    }
+
     if (customEmojis.length > 0 && msg.chat.type === 'private') {
       const lines = [
         `✨ <b>${customEmojis.length} adet Premium Emoji bulundu</b>`,
@@ -109,31 +136,23 @@ function init() {
       return;
     }
 
-    // Bot API'nin eski (forward_from_chat) ve yeni (forward_origin) alanlarını kontrol et
-    const fwdChat = msg.forward_from_chat || msg.forward_origin?.chat || null;
-    const fwdUser = msg.forward_from || msg.forward_origin?.sender_user || null;
-
-    if (fwdChat) {
-      const lines = [
-        '✅ <b>İletilen mesajın kaynağı bulundu</b>',
-        '',
-        `📡 Chat ID: <code>${fwdChat.id}</code>`,
-        `Tür: <code>${fwdChat.type}</code>`,
-        fwdChat.title ? `İsim: ${escapeHtml(fwdChat.title)}` : '',
-        fwdChat.username ? `Kullanıcı adı: @${fwdChat.username}` : '',
-        '',
-        '👉 Bu ID\'yi web panelde "Kanallar → Yeni Kanal" ekranına yapıştırabilirsin.',
-        '',
-        '<i>Not: Botu da kanalın yöneticisi olarak eklemeyi unutma — yoksa mesaj gönderemez.</i>',
-      ].filter(Boolean).join('\n');
-      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
-      return;
-    }
-
     if (fwdUser && msg.chat.type === 'private') {
       bot.sendMessage(
         msg.chat.id,
         `👤 İletilen mesaj bir kullanıcıdan: <code>${fwdUser.id}</code>\n\nKanal chat_id öğrenmek istiyorsan, kanaldaki bir mesajı bana ilet.`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    // İletilen ama kaynağı GİZLİ mesaj (kanalın gizlilik/"içeriği koru" ayarı açık).
+    // forward_origin var ama chat/sender_user yok → chat_id veremeyiz, açıkça söyle.
+    const isForwarded = !!(msg.forward_origin || msg.forward_date || msg.forward_sender_name);
+    if (isForwarded && msg.chat.type === 'private') {
+      bot.sendMessage(
+        msg.chat.id,
+        '⚠️ Bu iletilen mesajın kaynağı <b>gizli</b> (kanal ayarlarında gönderen adı gizleniyor ya da içerik korumalı), bu yüzden chat_id okuyamıyorum.\n\n' +
+          'Çözüm: Botu kanala <b>yönetici</b> olarak ekle — kanal otomatik olarak kaydedilir ve ID gerekmeden çalışır.',
         { parse_mode: 'HTML' },
       );
       return;
