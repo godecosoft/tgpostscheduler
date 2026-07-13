@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX, Search, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDateTime } from '@/lib/utils';
+import { parseButtons, parseReactions, reactionsTotal } from '@/lib/parsePost';
 import type { Post, Channel } from '@/lib/types';
 import {
   useSendNow, useRetryPost, useDeletePost, usePausePost, useResumePost,
@@ -164,14 +165,9 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
     <div className="space-y-3">
       {filterBar}
       {shown.map((p) => {
-        let buttonRows: any[][] = [];
-        try {
-          buttonRows = p.buttons ? JSON.parse(p.buttons) : [];
-        } catch {}
-        const reactions: Record<string, number> = (() => {
-          try { return p.reactions ? JSON.parse(p.reactions) : {}; } catch { return {}; }
-        })();
-        const reactionsTotal = Object.values(reactions).reduce((a, b) => a + b, 0);
+        const buttonRows = parseButtons(p.buttons);
+        const reactions = parseReactions(p.reactions);
+        const rxnTotal = reactionsTotal(reactions);
 
         return (
           <Card key={p.id}>
@@ -254,7 +250,7 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
                       </span>
                       <span className="flex items-center gap-1">
                         <Heart className="h-3 w-3 text-rose-400" />
-                        {reactionsTotal}
+                        {rxnTotal}
                       </span>
                       {Object.entries(reactions).slice(0, 6).map(([k, v]) => (
                         <span key={k}>{k} {v}</span>

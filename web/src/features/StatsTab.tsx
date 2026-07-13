@@ -10,6 +10,7 @@ import { Eye, Heart, TrendingUp, RefreshCw, Send, Loader2, AlertCircle, Tv, Tras
 import { toast } from 'sonner';
 import { useStats, useSetViews } from '@/hooks/useStats';
 import { formatDateTime } from '@/lib/utils';
+import { parseReactions, reactionsTotal } from '@/lib/parsePost';
 
 function StatCard({
   label, value, icon: Icon, color = 'text-primary',
@@ -192,8 +193,8 @@ export function StatsTab() {
           ) : (
             <div className="space-y-2">
               {data.topPosts.map((p, i) => {
-                const reactions: Record<string, number> = p.reactions ? JSON.parse(p.reactions) : {};
-                const reactionsTotal = Object.values(reactions).reduce((a, b) => a + b, 0);
+                const reactions = parseReactions(p.reactions);
+                const rxnTotal = reactionsTotal(reactions);
                 return (
                   <div key={p.id} className="flex items-start gap-3 rounded-md border p-3">
                     <div className="text-2xl font-bold text-muted-foreground">#{i + 1}</div>
@@ -215,7 +216,7 @@ export function StatsTab() {
                         <ManualViewsInput postId={p.id} initialViews={p.views} onUpdated={load} />
                         <span className="flex items-center gap-1">
                           <Heart className="h-3 w-3 text-rose-400" />
-                          {reactionsTotal}
+                          {rxnTotal}
                         </span>
                         {Object.entries(reactions).slice(0, 5).map(([k, v]) => (
                           <span key={k}>{k} {v}</span>
