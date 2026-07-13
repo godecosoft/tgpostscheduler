@@ -1,5 +1,6 @@
 const express = require('express');
 const { db } = require('../db');
+const { audit, actorOf } = require('../audit');
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.post('/', (req, res) => {
   const r = db
     .prepare('INSERT INTO templates (name, text, buttons, channel_id) VALUES (?, ?, ?, ?)')
     .run(name, text, buttons ? JSON.stringify(buttons) : null, channel_id ? Number(channel_id) : null);
+  audit(actorOf(req), 'template.create', 'template', r.lastInsertRowid, name);
   res.json({ id: r.lastInsertRowid });
 });
 
@@ -41,11 +43,13 @@ router.put('/:id', (req, res) => {
     channel_id ? Number(channel_id) : null,
     req.params.id,
   );
+  audit(actorOf(req), 'template.update', 'template', req.params.id, name);
   res.json({ ok: true });
 });
 
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
+  audit(actorOf(req), 'template.delete', 'template', req.params.id, null);
   res.json({ ok: true });
 });
 

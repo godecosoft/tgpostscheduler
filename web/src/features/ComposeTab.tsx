@@ -26,7 +26,30 @@ import {
 } from '@/lib/schedule';
 import { useCreatePost, useUpdatePost, useSendNow } from '@/hooks/usePosts';
 import { useCreateTemplate } from '@/hooks/useTemplates';
+import { useHealth } from '@/hooks/useSystem';
 import { TelegramPreview } from './TelegramPreview';
+
+// Sunucu ve tarayıcı saat dilimini gösterir; farklıysa uyarır.
+function TimezoneBadge() {
+  const { data: health } = useHealth();
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const serverTz = health?.tz;
+  const mismatch = serverTz && serverTz !== browserTz;
+  return (
+    <Badge
+      variant={mismatch ? 'destructive' : 'secondary'}
+      className="gap-1 text-[10px] font-normal"
+      title={
+        mismatch
+          ? `Sunucu (${serverTz}) ile tarayıcın (${browserTz}) farklı saat diliminde. Girdiğin saatler tarayıcı saatine göre yorumlanır.`
+          : `Saatler ${browserTz} dilimine göre`
+      }
+    >
+      🕒 {serverTz ? `sunucu: ${serverTz}` : browserTz}
+      {mismatch ? ` ≠ sen: ${browserTz}` : ''}
+    </Badge>
+  );
+}
 
 const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
 
@@ -707,9 +730,10 @@ export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: P
 
           {/* --- ZAMANLAMA --- */}
           <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <CalendarDays className="h-4 w-4 text-primary" />
               <Label className="text-base font-semibold">Zamanlama</Label>
+              <TimezoneBadge />
             </div>
 
             <div className="space-y-2">

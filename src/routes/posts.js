@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../db');
 const { sendPost } = require('../bot');
+const { audit, actorOf } = require('../audit');
 
 const router = express.Router();
 
@@ -191,6 +192,7 @@ router.post('/', (req, res) => {
       result.lastInsertRowid,
     );
   }
+  audit(actorOf(req), 'post.create', 'post', result.lastInsertRowid, cron_expression ? 'tekrarlı' : 'tek seferlik');
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -232,6 +234,7 @@ router.put('/:id', (req, res) => {
     recurrence_end !== undefined ? (recurrence_end || null) : post.recurrence_end,
     req.params.id,
   );
+  audit(actorOf(req), 'post.update', 'post', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -241,6 +244,7 @@ router.post('/:id/pause', (req, res) => {
   if (!post) return res.status(404).json({ error: 'Bulunamadı' });
   if (post.status !== 'pending') return res.status(400).json({ error: 'Sadece bekleyen post duraklatılabilir' });
   db.prepare(`UPDATE posts SET status = 'paused' WHERE id = ?`).run(req.params.id);
+  audit(actorOf(req), 'post.pause', 'post', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -250,6 +254,7 @@ router.post('/:id/resume', (req, res) => {
   if (!post) return res.status(404).json({ error: 'Bulunamadı' });
   if (post.status !== 'paused') return res.status(400).json({ error: 'Sadece duraklatılmış post devam ettirilebilir' });
   db.prepare(`UPDATE posts SET status = 'pending' WHERE id = ?`).run(req.params.id);
+  audit(actorOf(req), 'post.resume', 'post', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -257,6 +262,7 @@ router.delete('/:id', (req, res) => {
   const post = db.prepare('SELECT photo_path, media_group FROM posts WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM posts WHERE id = ?').run(req.params.id);
   if (post) cleanupPostFiles(post); // silmeden sonra: artık referans sayımına dahil değil
+  audit(actorOf(req), 'post.delete', 'post', req.params.id, null);
   res.json({ ok: true });
 });
 
@@ -280,6 +286,14 @@ router.post('/:id/send-now', async (req, res) => {
     .get(req.params.id);
   if (!post) return res.status(404).json({ error: 'Bulunamadı' });
 
+  // Atomik claim — scheduler ile aynı anda göndermeyi engelle
+  const claim = db
+    .prepare(`UPDATE posts SET status = 'sending' WHERE id = ? AND status IN ('pending','paused','failed')`)
+    .run(post.id);
+  if (claim.changes !== 1) {
+    return res.status(409).json({ error: 'Bu gönderim şu an işleniyor ya da zaten gönderilmiş' });
+  }
+
   try {
     const channel = { chat_id: post.channel_chat_id, name: post.channel_name };
     const result = await sendPost(post, channel);
@@ -298,9 +312,11 @@ router.post('/:id/send-now', async (req, res) => {
       `UPDATE posts SET status = 'sent', sent_at = datetime('now'),
        telegram_message_id = ?, error = NULL, delete_at = ? WHERE id = ?`,
     ).run(messageId, deleteAt, post.id);
+    audit(actorOf(req), 'post.send', 'post', post.id, `${post.channel_name} (elle)`);
     res.json({ ok: true, message_id: messageId });
   } catch (err) {
     db.prepare(`UPDATE posts SET status = 'failed', error = ? WHERE id = ?`).run(err.message, post.id);
+    audit(actorOf(req), 'post.send_fail', 'post', post.id, err.message);
     res.status(500).json({ error: err.message });
   }
 });

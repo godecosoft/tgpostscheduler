@@ -99,6 +99,20 @@ safeAddColumn('posts', 'occurrence_num', 'INTEGER DEFAULT 1'); // bu, serinin ka
 safeAddColumn('posts', 'max_occurrences', 'INTEGER'); // NULL = sınırsız; N kez sonra dur
 safeAddColumn('posts', 'recurrence_end', 'TEXT'); // ISO tarih; bu tarihten sonra üretme
 
+// Denetim günlüğü (audit log) — kim ne yaptı
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT DEFAULT (datetime('now')),
+    actor TEXT,            -- kullanıcı adı ya da 'system'
+    action TEXT NOT NULL,  -- örn: post.create, post.send, channel.delete, auth.login
+    entity TEXT,           -- post | channel | template | auth
+    entity_id TEXT,
+    detail TEXT            -- serbest metin (kanal adı, hata, vs.)
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log(at DESC);
+`);
+
 // İlk admin kullanıcı setup
 function ensureAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';

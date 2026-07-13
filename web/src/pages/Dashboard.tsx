@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle } from 'lucide-react';
+import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle, ScrollText } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Post } from '@/lib/types';
 import { useMe, useLogout } from '@/hooks/useAuth';
@@ -16,6 +16,7 @@ import { ChannelsTab } from '@/features/ChannelsTab';
 import { TemplatesTab } from '@/features/TemplatesTab';
 import { StatsTab } from '@/features/StatsTab';
 import { CalendarTab } from '@/features/CalendarTab';
+import { AuditTab } from '@/features/AuditTab';
 import { PasswordDialog } from '@/features/PasswordDialog';
 
 export function DashboardPage() {
@@ -149,6 +150,10 @@ export function DashboardPage() {
               <BookOpen className="h-3.5 w-3.5" />
               Şablonlar
             </TabsTrigger>
+            <TabsTrigger value="audit" className="gap-1.5">
+              <ScrollText className="h-3.5 w-3.5" />
+              Günlük
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="compose">
@@ -213,6 +218,10 @@ export function DashboardPage() {
 
           <TabsContent value="templates">
             <TemplatesTab templates={templates} channels={channels} />
+          </TabsContent>
+
+          <TabsContent value="audit">
+            <AuditTab />
           </TabsContent>
         </Tabs>
       </main>

@@ -22,4 +22,6 @@ export const qk = {
     channelId != null ? (['templates', channelId] as const) : (['templates'] as const),
   posts: ['posts'] as const,
   stats: ['stats', 'dashboard'] as const,
+  audit: ['audit'] as const,
+  health: ['health'] as const,
 };

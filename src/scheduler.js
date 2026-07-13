@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const cronParser = require('cron-parser');
 const { db } = require('./db');
 const { sendPost, deleteChannelMessage, notifyAdmin } = require('./bot');
+const { audit } = require('./audit');
 
 // Otomatik retry ayarları
 const MAX_ATTEMPTS = 3; // bu kadar denemeden sonra kalıcı 'failed'
@@ -46,6 +47,13 @@ async function processPendingPosts() {
     .all(nowISO);
 
   for (const post of pending) {
+    // Atomik claim — aynı postu iki tick/instance göndermesin.
+    // status='pending' → 'sending' geçişi tek bir yazana başarır.
+    const claim = db
+      .prepare(`UPDATE posts SET status = 'sending' WHERE id = ? AND status = 'pending'`)
+      .run(post.id);
+    if (claim.changes !== 1) continue; // başka biri kaptı
+
     try {
       const channel = { chat_id: post.channel_chat_id, name: post.channel_name };
       const result = await sendPost(post, channel);
@@ -66,6 +74,7 @@ async function processPendingPosts() {
         `UPDATE posts SET status = 'sent', sent_at = datetime('now'),
          telegram_message_id = ?, error = NULL, delete_at = ? WHERE id = ?`,
       ).run(messageId, deleteAt, post.id);
+      audit('system', 'post.send', 'post', post.id, `${post.channel_name} (zamanlı)`);
       console.log(`[scheduler] Gönderildi: post #${post.id} → ${post.channel_name}`);
 
       // Recurring (önayar) ise yeni post oluştur
@@ -134,7 +143,7 @@ async function processPendingPosts() {
         const waitMin = BACKOFF_MINUTES[attempts - 1] || 15;
         const nextTry = new Date(Date.now() + waitMin * 60 * 1000).toISOString();
         db.prepare(
-          `UPDATE posts SET attempts = ?, error = ?, scheduled_at = ? WHERE id = ?`,
+          `UPDATE posts SET status = 'pending', attempts = ?, error = ?, scheduled_at = ? WHERE id = ?`,
         ).run(attempts, errMsg, nextTry, post.id);
         console.warn(
           `[scheduler] post #${post.id} deneme ${attempts}/${MAX_ATTEMPTS} başarısız — ${waitMin}dk sonra tekrar: ${errMsg}`,
@@ -147,6 +156,7 @@ async function processPendingPosts() {
           post.id,
         );
         console.error(`[scheduler] post #${post.id} KALICI başarısız (${attempts} deneme): ${errMsg}`);
+        audit('system', 'post.send_fail', 'post', post.id, errMsg);
         notifyAdmin(
           `🔴 <b>Gönderim başarısız</b>\n\n` +
             `Post #${post.id} → <b>${escapeHtml(post.channel_name)}</b>\n` +
@@ -199,16 +209,34 @@ async function processAutoDeletes() {
   }
 }
 
+let ticking = false; // aynı instance'ta üst üste binen tick'leri engelle
+
+async function tick() {
+  if (ticking) return; // önceki tick hâlâ sürüyorsa atla
+  ticking = true;
+  try {
+    await processPendingPosts();
+    await processAutoDeletes();
+  } catch (e) {
+    console.error('[scheduler] döngü hatası:', e);
+  } finally {
+    ticking = false;
+  }
+}
+
 function start() {
-  // Her dakika kontrol — pending postlar + auto-delete birlikte
-  cron.schedule('* * * * *', () => {
-    processPendingPosts().catch((e) => console.error('[scheduler] döngü hatası:', e));
-    processAutoDeletes().catch((e) => console.error('[scheduler] delete döngü hatası:', e));
-  });
+  // Crash recovery: yarıda kalan 'sending' postları tekrar kuyruğa al
+  try {
+    const rec = db.prepare(`UPDATE posts SET status = 'pending' WHERE status = 'sending'`).run();
+    if (rec.changes) console.log(`[scheduler] ${rec.changes} yarım kalan gönderim kurtarıldı`);
+  } catch (e) {
+    console.error('[scheduler] recovery hatası:', e.message);
+  }
+
+  // Her dakika kontrol — pending postlar + auto-delete birlikte (tek seferde bir tick)
+  cron.schedule('* * * * *', tick);
   console.log('[scheduler] Başlatıldı (her dakika kontrol ediyor)');
-  // İlk açılışta bir kez hemen çalıştır
-  processPendingPosts().catch(() => {});
-  processAutoDeletes().catch(() => {});
+  tick(); // ilk açılışta hemen
 }
 
 module.exports = { start, processPendingPosts, processAutoDeletes, nextCronDate };

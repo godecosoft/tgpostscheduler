@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { db } = require('../db');
+const { audit } = require('../audit');
 
 const router = express.Router();
 
@@ -67,6 +68,7 @@ router.post('/login', (req, res) => {
   clearFails(ip);
   req.session.userId = user.id;
   req.session.username = user.username;
+  audit(user.username, 'auth.login', 'auth', user.id, ip);
   res.json({ ok: true, username: user.username });
 });
 
@@ -98,6 +100,7 @@ router.post('/change-password', (req, res) => {
   }
   const hash = bcrypt.hashSync(String(new_password), 10);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  audit(user.username, 'auth.password_change', 'auth', user.id, null);
   res.json({ ok: true });
 });
 

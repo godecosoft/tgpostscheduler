@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { getBot, getBotInfo } = require('../bot');
+const { audit, actorOf } = require('../audit');
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ router.post('/', (req, res) => {
     const result = db
       .prepare('INSERT INTO channels (name, chat_id, username, note) VALUES (?, ?, ?, ?)')
       .run(name, String(chat_id), username || null, note || null);
+    audit(actorOf(req), 'channel.create', 'channel', result.lastInsertRowid, name);
     res.json({ id: result.lastInsertRowid });
   } catch (err) {
     if (err.message.includes('UNIQUE')) {
@@ -34,11 +36,14 @@ router.put('/:id', (req, res) => {
     note || null,
     req.params.id,
   );
+  audit(actorOf(req), 'channel.update', 'channel', req.params.id, name);
   res.json({ ok: true });
 });
 
 router.delete('/:id', (req, res) => {
+  const ch = db.prepare('SELECT name FROM channels WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM channels WHERE id = ?').run(req.params.id);
+  audit(actorOf(req), 'channel.delete', 'channel', req.params.id, ch?.name || null);
   res.json({ ok: true });
 });
 
