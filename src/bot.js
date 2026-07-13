@@ -380,4 +380,19 @@ async function deleteChannelMessage(chatId, messageId) {
   return bot.deleteMessage(chatId, messageId);
 }
 
-module.exports = { init, getBot, sendPost, deleteChannelMessage, buildReplyMarkup };
+// Admin'e bildirim gönder (ör. gönderim kalıcı başarısız oldu).
+// ADMIN_CHAT_ID env'i ile hedef belirlenir; yoksa sessizce atlanır.
+async function notifyAdmin(text) {
+  const chatId = process.env.ADMIN_CHAT_ID || process.env.NOTIFY_CHAT_ID;
+  if (!bot || !chatId) return;
+  try {
+    await bot.sendMessage(chatId, text, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+  } catch (e) {
+    console.error('[bot] notifyAdmin hata:', e.message);
+  }
+}
+
+module.exports = { init, getBot, sendPost, deleteChannelMessage, buildReplyMarkup, notifyAdmin };

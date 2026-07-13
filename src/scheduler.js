@@ -1,7 +1,11 @@
 const cron = require('node-cron');
 const cronParser = require('cron-parser');
 const { db } = require('./db');
-const { sendPost, deleteChannelMessage } = require('./bot');
+const { sendPost, deleteChannelMessage, notifyAdmin } = require('./bot');
+
+// Otomatik retry ayarları
+const MAX_ATTEMPTS = 3; // bu kadar denemeden sonra kalıcı 'failed'
+const BACKOFF_MINUTES = [2, 5, 15]; // denemeler arası bekleme (backoff)
 
 function nextRecurringDate(currentISO, recurring) {
   // Basit önayar tekrarları
@@ -103,10 +107,41 @@ async function processPendingPosts() {
       }
     } catch (err) {
       const errMsg = err.message || String(err);
-      db.prepare(`UPDATE posts SET status = 'failed', error = ? WHERE id = ?`).run(errMsg, post.id);
-      console.error(`[scheduler] Hata: post #${post.id} →`, errMsg);
+      const attempts = (post.attempts || 0) + 1;
+
+      if (attempts < MAX_ATTEMPTS) {
+        // Backoff ile yeniden dene — pending kalır, scheduled_at ileri alınır
+        const waitMin = BACKOFF_MINUTES[attempts - 1] || 15;
+        const nextTry = new Date(Date.now() + waitMin * 60 * 1000).toISOString();
+        db.prepare(
+          `UPDATE posts SET attempts = ?, error = ?, scheduled_at = ? WHERE id = ?`,
+        ).run(attempts, errMsg, nextTry, post.id);
+        console.warn(
+          `[scheduler] post #${post.id} deneme ${attempts}/${MAX_ATTEMPTS} başarısız — ${waitMin}dk sonra tekrar: ${errMsg}`,
+        );
+      } else {
+        // Kalıcı başarısız — admin'e bildir
+        db.prepare(`UPDATE posts SET status = 'failed', attempts = ?, error = ? WHERE id = ?`).run(
+          attempts,
+          errMsg,
+          post.id,
+        );
+        console.error(`[scheduler] post #${post.id} KALICI başarısız (${attempts} deneme): ${errMsg}`);
+        notifyAdmin(
+          `🔴 <b>Gönderim başarısız</b>\n\n` +
+            `Post #${post.id} → <b>${escapeHtml(post.channel_name)}</b>\n` +
+            `${attempts} deneme yapıldı, hepsi başarısız.\n\n` +
+            `Hata: <code>${escapeHtml(errMsg)}</code>\n\n` +
+            `Panelden "Geçmiş → Başarısız" altından tekrar deneyebilirsin.`,
+        );
+      }
     }
   }
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function processAutoDeletes() {

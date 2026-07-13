@@ -32,6 +32,44 @@ const upload = multer({
   },
 });
 
+// Bir dosya adı başka bir post tarafından hâlâ kullanılıyor mu?
+function fileStillReferenced(filename) {
+  if (!filename) return true; // boşsa dokunma
+  const byPhoto = db.prepare('SELECT COUNT(*) AS c FROM posts WHERE photo_path = ?').get(filename).c;
+  if (byPhoto > 0) return true;
+  const byGroup = db
+    .prepare(`SELECT COUNT(*) AS c FROM posts WHERE media_group LIKE ?`)
+    .get('%' + filename + '%').c;
+  return byGroup > 0;
+}
+
+// Post silinince ilişkili upload dosyalarını diskten temizle (başka post kullanmıyorsa)
+function cleanupPostFiles(post) {
+  const names = new Set();
+  if (post.photo_path) names.add(String(post.photo_path).replace(/^uploads[\\/]/, ''));
+  if (post.media_group) {
+    try {
+      const group = JSON.parse(post.media_group);
+      if (Array.isArray(group)) {
+        for (const item of group) {
+          if (item?.path) names.add(String(item.path).replace(/^uploads[\\/]/, ''));
+        }
+      }
+    } catch {}
+  }
+  for (const name of names) {
+    if (fileStillReferenced(name)) continue;
+    const full = path.join(UPLOAD_DIR, name);
+    fs.unlink(full, (err) => {
+      if (err && err.code !== 'ENOENT') {
+        console.error('[posts] upload silme hatası:', name, err.message);
+      } else if (!err) {
+        console.log('[posts] upload temizlendi:', name);
+      }
+    });
+  }
+}
+
 function detectMediaType(mimetype, filename) {
   const mt = String(mimetype || '').toLowerCase();
   const name = String(filename || '').toLowerCase();
@@ -163,7 +201,7 @@ router.put('/:id', (req, res) => {
     `UPDATE posts SET channel_id = ?, text = ?, photo_path = ?, buttons = ?, parse_mode = ?,
      disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?,
      media_type = ?, media_group = ?, cron_expression = ?, auto_delete_minutes = ?,
-     time_range_minutes = ?, status = 'pending', error = NULL
+     time_range_minutes = ?, status = 'pending', error = NULL, attempts = 0
      WHERE id = ?`,
   ).run(
     channel_id ?? post.channel_id,
@@ -186,16 +224,18 @@ router.put('/:id', (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const post = db.prepare('SELECT photo_path, media_group FROM posts WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM posts WHERE id = ?').run(req.params.id);
+  if (post) cleanupPostFiles(post); // silmeden sonra: artık referans sayımına dahil değil
   res.json({ ok: true });
 });
 
-// Başarısız bir postu yeniden dene (status'u pending'e al, scheduled_at'i şimdiye)
+// Başarısız bir postu yeniden dene (status'u pending'e al, scheduled_at'i şimdiye, sayaç sıfır)
 router.post('/:id/retry', (req, res) => {
   const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
   if (!post) return res.status(404).json({ error: 'Bulunamadı' });
   db.prepare(
-    `UPDATE posts SET status = 'pending', error = NULL, scheduled_at = datetime('now') WHERE id = ?`,
+    `UPDATE posts SET status = 'pending', error = NULL, attempts = 0, scheduled_at = datetime('now') WHERE id = ?`,
   ).run(req.params.id);
   res.json({ ok: true });
 });
