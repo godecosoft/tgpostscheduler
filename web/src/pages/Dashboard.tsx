@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,7 +33,10 @@ export function DashboardPage() {
   const [historyFilter, setHistoryFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [presetDate, setPresetDate] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('compose');
+  // Tab state URL'de (?tab=…) — deep-link + tarayıcı geri/ileri tuşu çalışır
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'compose';
+  const setActiveTab = (tab: string) => setSearchParams({ tab });
 
   function startEdit(p: Post) {
     setEditingPost(p);
