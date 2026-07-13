@@ -27,6 +27,23 @@ router.post('/', (req, res) => {
   res.json({ id: r.lastInsertRowid });
 });
 
+router.put('/:id', (req, res) => {
+  const { name, text, buttons, channel_id } = req.body || {};
+  if (!name || !text) return res.status(400).json({ error: 'name ve text zorunlu' });
+  const existing = db.prepare('SELECT id FROM templates WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Şablon bulunamadı' });
+  db.prepare(
+    'UPDATE templates SET name = ?, text = ?, buttons = ?, channel_id = ? WHERE id = ?',
+  ).run(
+    name,
+    text,
+    buttons ? JSON.stringify(buttons) : null,
+    channel_id ? Number(channel_id) : null,
+    req.params.id,
+  );
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
   res.json({ ok: true });

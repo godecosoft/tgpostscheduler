@@ -7,24 +7,53 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Channel } from '@/lib/types';
-import { Trash2, Send, Info } from 'lucide-react';
+import { Trash2, Send, Info, Pencil, HeartPulse, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 interface Props {
   channels: Channel[];
   onChanged: () => void;
 }
 
-export function ChannelsTab({ channels, onChanged }: Props) {
-  const [form, setForm] = useState({ name: '', chat_id: '', username: '', note: '' });
-  const [busy, setBusy] = useState(false);
+interface Health {
+  ok: boolean;
+  status?: string;
+  is_admin?: boolean;
+  can_post?: boolean;
+  can_delete?: boolean;
+  error?: string;
+}
 
-  async function add(e: FormEvent) {
+const emptyForm = { name: '', chat_id: '', username: '', note: '' };
+
+export function ChannelsTab({ channels, onChanged }: Props) {
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<Record<number, Health | 'loading'>>({});
+
+  function resetForm() {
+    setForm(emptyForm);
+    setEditingId(null);
+  }
+
+  function startEdit(c: Channel) {
+    setEditingId(c.id);
+    setForm({ name: c.name, chat_id: c.chat_id, username: c.username || '', note: c.note || '' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post('/api/channels', form);
-      toast.success('Kanal eklendi');
-      setForm({ name: '', chat_id: '', username: '', note: '' });
+      if (editingId) {
+        await api.put(`/api/channels/${editingId}`, form);
+        toast.success('Kanal güncellendi');
+      } else {
+        await api.post('/api/channels', form);
+        toast.success('Kanal eklendi');
+      }
+      resetForm();
       onChanged();
     } catch (err: any) {
       toast.error(err.message);
@@ -38,6 +67,7 @@ export function ChannelsTab({ channels, onChanged }: Props) {
     try {
       await api.del(`/api/channels/${id}`);
       toast.success('Silindi');
+      if (editingId === id) resetForm();
       onChanged();
     } catch (e: any) {
       toast.error(e.message);
@@ -51,6 +81,45 @@ export function ChannelsTab({ channels, onChanged }: Props) {
     } catch (e: any) {
       toast.error(e.message);
     }
+  }
+
+  async function checkHealth(id: number) {
+    setHealth((h) => ({ ...h, [id]: 'loading' }));
+    try {
+      const res = await api.get<Health>(`/api/channels/${id}/health`);
+      setHealth((h) => ({ ...h, [id]: res }));
+    } catch (e: any) {
+      setHealth((h) => ({ ...h, [id]: { ok: false, error: e.message } }));
+    }
+  }
+
+  function HealthBadge({ h }: { h: Health | 'loading' }) {
+    if (h === 'loading') {
+      return (
+        <Badge variant="secondary" className="gap-1">
+          <Loader2 className="h-3 w-3 animate-spin" /> kontrol…
+        </Badge>
+      );
+    }
+    if (!h.ok) {
+      return (
+        <Badge variant="destructive" className="gap-1">
+          <XCircle className="h-3 w-3" /> {h.error || 'ulaşılamadı'}
+        </Badge>
+      );
+    }
+    if (h.can_post) {
+      return (
+        <Badge variant="success" className="gap-1">
+          <CheckCircle2 className="h-3 w-3" /> admin · gönderebilir
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="destructive" className="gap-1">
+        <XCircle className="h-3 w-3" /> {h.is_admin ? 'admin ama gönderemez' : `yetki yok (${h.status})`}
+      </Badge>
+    );
   }
 
   return (
@@ -72,11 +141,11 @@ export function ChannelsTab({ channels, onChanged }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Yeni Kanal</CardTitle>
+          <CardTitle>{editingId ? 'Kanalı Düzenle' : 'Yeni Kanal'}</CardTitle>
           <CardDescription>Telegram kanalını sisteme tanıt.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={add} className="grid gap-3 sm:grid-cols-2">
+          <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label>İsim *</Label>
               <Input
@@ -111,10 +180,15 @@ export function ChannelsTab({ channels, onChanged }: Props) {
                 placeholder="Türkiye ana kanalı"
               />
             </div>
-            <div className="sm:col-span-2">
+            <div className="flex gap-2 sm:col-span-2">
               <Button type="submit" disabled={busy}>
-                + Kanal Ekle
+                {editingId ? 'Kaydet' : '+ Kanal Ekle'}
               </Button>
+              {editingId && (
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  Vazgeç
+                </Button>
+              )}
             </div>
           </form>
         </CardContent>
@@ -128,21 +202,30 @@ export function ChannelsTab({ channels, onChanged }: Props) {
         ) : (
           channels.map((c) => (
             <Card key={c.id}>
-              <CardContent className="flex items-center justify-between p-4">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{c.name}</span>
                     {c.username && <Badge variant="outline">@{c.username}</Badge>}
+                    {health[c.id] && <HealthBadge h={health[c.id]} />}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     Chat ID: <code className="rounded bg-muted px-1">{c.chat_id}</code>
                   </div>
                   {c.note && <div className="text-xs text-muted-foreground">{c.note}</div>}
                 </div>
-                <div className="flex gap-1">
+                <div className="flex flex-wrap gap-1">
+                  <Button size="sm" variant="outline" onClick={() => checkHealth(c.id)}>
+                    <HeartPulse className="mr-1 h-3.5 w-3.5" />
+                    Sağlık
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => test(c.id)}>
                     <Send className="mr-1 h-3.5 w-3.5" />
                     Test
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => startEdit(c)}>
+                    <Pencil className="mr-1 h-3.5 w-3.5" />
+                    Düzenle
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => remove(c.id)}>
                     <Trash2 className="h-3.5 w-3.5" />

@@ -297,6 +297,28 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
     toast.success(`"${t.name}" şablonu uygulandı`);
   }
 
+  // Mevcut gönderiyi (metin + butonlar) şablon olarak kaydet
+  async function saveAsTemplate() {
+    if (!draft.text.trim()) return toast.error('Önce metin girin');
+    const name = prompt('Şablon adı:');
+    if (!name) return;
+    const cleanButtons = draft.buttons
+      .map((row) => row.filter((b) => b.text && b.url))
+      .filter((row) => row.length > 0);
+    try {
+      await api.post('/api/templates', {
+        name,
+        text: draft.text,
+        buttons: cleanButtons.length ? cleanButtons : null,
+        channel_id: draft.channel_id, // seçili kanala özel kaydeder
+      });
+      toast.success('Şablon kaydedildi');
+      onSaved(); // template listesini tazele
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   async function submit(sendNow: boolean) {
     if (!draft.channel_id) return toast.error('Kanal seçin');
     const hasMedia = !!draft.photo_url || draft.media_group.length > 0;
@@ -440,23 +462,35 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
 
             <div className="space-y-2">
               <Label>Şablon (opsiyonel)</Label>
-              <Select onValueChange={applyTemplate}>
-                <SelectTrigger><SelectValue placeholder="Şablon seç…" /></SelectTrigger>
-                <SelectContent>
-                  {templates
-                    .filter(
-                      (t) =>
-                        t.channel_id == null ||
-                        t.channel_id === draft.channel_id,
-                    )
-                    .map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>
-                        {t.channel_id == null ? '🌐 ' : '📡 '}
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select onValueChange={applyTemplate}>
+                  <SelectTrigger><SelectValue placeholder="Şablon seç…" /></SelectTrigger>
+                  <SelectContent>
+                    {templates
+                      .filter(
+                        (t) =>
+                          t.channel_id == null ||
+                          t.channel_id === draft.channel_id,
+                      )
+                      .map((t) => (
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.channel_id == null ? '🌐 ' : '📡 '}
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={saveAsTemplate}
+                  title="Bu gönderiyi şablon olarak kaydet"
+                >
+                  💾 Şablon yap
+                </Button>
+              </div>
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const { db } = require('../db');
-const { getBot } = require('../bot');
+const { getBot, getBotInfo } = require('../bot');
 
 const router = express.Router();
 
@@ -40,6 +40,32 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM channels WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// Sağlık kontrolü: bot kanalda admin mi, mesaj gönderebiliyor mu?
+router.get('/:id/health', async (req, res) => {
+  const channel = db.prepare('SELECT * FROM channels WHERE id = ?').get(req.params.id);
+  if (!channel) return res.status(404).json({ error: 'Kanal yok' });
+  const bot = getBot();
+  if (!bot) return res.json({ ok: false, error: 'Bot başlatılmamış (token eksik)' });
+  try {
+    const me = getBotInfo() || (await bot.getMe());
+    const member = await bot.getChatMember(channel.chat_id, me.id);
+    const status = member.status; // creator|administrator|member|restricted|left|kicked
+    const isAdmin = status === 'administrator' || status === 'creator';
+    // Kanallarda admin için can_post_messages; tanımsızsa (creator) true kabul
+    const canPost = isAdmin && member.can_post_messages !== false;
+    res.json({
+      ok: true,
+      status,
+      is_admin: isAdmin,
+      can_post: canPost,
+      can_delete: !!member.can_delete_messages,
+      can_edit: !!member.can_edit_messages,
+    });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
 });
 
 // Test: kanala basit mesaj at

@@ -12,10 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Pencil, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import type { Template, Channel } from '@/lib/types';
+import type { Template, Channel, Button as BtnType } from '@/lib/types';
 
 interface Props {
   templates: Template[];
@@ -25,21 +25,63 @@ interface Props {
 
 const GENERAL = '__general__';
 
+interface FormState {
+  name: string;
+  text: string;
+  buttons: BtnType[];
+}
+
+const emptyForm: FormState = { name: '', text: '', buttons: [] };
+
+// Şablonun buttons string'ini düz Button listesine indir (grid → flat)
+function parseButtons(raw: string | null): BtnType[] {
+  if (!raw) return [];
+  try {
+    const grid = JSON.parse(raw);
+    if (Array.isArray(grid)) return grid.flat().filter((b: any) => b && b.text);
+  } catch {}
+  return [];
+}
+
 export function TemplatesTab({ templates, channels, onChanged }: Props) {
-  const [form, setForm] = useState({ name: '', text: '' });
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [channelId, setChannelId] = useState<string>(GENERAL);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function add(e: FormEvent) {
+  function resetForm() {
+    setForm(emptyForm);
+    setChannelId(GENERAL);
+    setEditingId(null);
+  }
+
+  function startEdit(t: Template) {
+    setEditingId(t.id);
+    setForm({ name: t.name, text: t.text, buttons: parseButtons(t.buttons) });
+    setChannelId(t.channel_id == null ? GENERAL : String(t.channel_id));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function save(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
+    // Butonları grid'e çevir: her buton kendi satırında (dikey)
+    const cleanButtons = form.buttons.filter((b) => b.text && b.url).map((b) => [b]);
+    const payload = {
+      name: form.name,
+      text: form.text,
+      channel_id: channelId === GENERAL ? null : Number(channelId),
+      buttons: cleanButtons.length ? cleanButtons : null,
+    };
     try {
-      await api.post('/api/templates', {
-        ...form,
-        channel_id: channelId === GENERAL ? null : Number(channelId),
-      });
-      toast.success('Şablon eklendi');
-      setForm({ name: '', text: '' });
+      if (editingId) {
+        await api.put(`/api/templates/${editingId}`, payload);
+        toast.success('Şablon güncellendi');
+      } else {
+        await api.post('/api/templates', payload);
+        toast.success('Şablon eklendi');
+      }
+      resetForm();
       onChanged();
     } catch (e: any) {
       toast.error(e.message);
@@ -53,6 +95,7 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
     try {
       await api.del(`/api/templates/${id}`);
       toast.success('Silindi');
+      if (editingId === id) resetForm();
       onChanged();
     } catch (e: any) {
       toast.error(e.message);
@@ -64,18 +107,25 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
     return channels.find((c) => c.id === id)?.name ?? `#${id}`;
   }
 
+  function setButton(i: number, patch: Partial<BtnType>) {
+    setForm((f) => ({
+      ...f,
+      buttons: f.buttons.map((b, idx) => (idx === i ? { ...b, ...patch } : b)),
+    }));
+  }
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Yeni Şablon</CardTitle>
+          <CardTitle>{editingId ? 'Şablonu Düzenle' : 'Yeni Şablon'}</CardTitle>
           <CardDescription>
             iGaming kampanyaları için tekrar kullanılabilir gönderi şablonu kaydet.
             Bir kanal seçersen şablon sadece o kanalda listelenir; "Genel" seçersen tüm kanallarda.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={add} className="space-y-3">
+          <form onSubmit={save} className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>İsim *</Label>
@@ -114,9 +164,54 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
                 className="font-mono text-sm"
               />
             </div>
-            <Button type="submit" disabled={busy}>
-              + Şablon Ekle
-            </Button>
+
+            {/* Butonlar */}
+            <div className="space-y-2">
+              <Label>Butonlar (opsiyonel)</Label>
+              {form.buttons.map((b, i) => (
+                <div key={i} className="flex gap-2">
+                  <Input
+                    placeholder="Buton yazısı"
+                    value={b.text}
+                    onChange={(e) => setButton(i, { text: e.target.value })}
+                  />
+                  <Input
+                    placeholder="https://…"
+                    value={b.url}
+                    onChange={(e) => setButton(i, { url: e.target.value })}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setForm((f) => ({ ...f, buttons: f.buttons.filter((_, idx) => idx !== i) }))
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setForm((f) => ({ ...f, buttons: [...f.buttons, { text: '', url: '' }] }))}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" /> Buton Ekle
+              </Button>
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="submit" disabled={busy}>
+                {editingId ? 'Kaydet' : '+ Şablon Ekle'}
+              </Button>
+              {editingId && (
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  Vazgeç
+                </Button>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -127,26 +222,43 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
             Henüz şablon yok.
           </div>
         ) : (
-          templates.map((t) => (
-            <Card key={t.id}>
-              <CardContent className="space-y-2 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium">{t.name}</div>
-                    <Badge variant="secondary" className="mt-1 text-[10px] font-normal">
-                      {channelName(t.channel_id) ? `📡 ${channelName(t.channel_id)}` : '🌐 Genel'}
-                    </Badge>
+          templates.map((t) => {
+            const btns = parseButtons(t.buttons);
+            return (
+              <Card key={t.id}>
+                <CardContent className="space-y-2 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium">{t.name}</div>
+                      <Badge variant="secondary" className="mt-1 text-[10px] font-normal">
+                        {channelName(t.channel_id) ? `📡 ${channelName(t.channel_id)}` : '🌐 Genel'}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => startEdit(t)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => remove(t.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => remove(t.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                <pre className="max-h-40 overflow-hidden whitespace-pre-wrap rounded bg-muted/40 p-3 text-xs">
-                  {t.text}
-                </pre>
-              </CardContent>
-            </Card>
-          ))
+                  <pre className="max-h-40 overflow-hidden whitespace-pre-wrap rounded bg-muted/40 p-3 text-xs">
+                    {t.text}
+                  </pre>
+                  {btns.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {btns.map((b, i) => (
+                        <Badge key={i} variant="outline" className="text-xs">
+                          🔘 {b.text}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
     </div>

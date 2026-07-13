@@ -256,6 +256,10 @@ function getBot() {
   return bot;
 }
 
+function getBotInfo() {
+  return botInfo;
+}
+
 function buildReplyMarkup(buttonsJson) {
   if (!buttonsJson) return undefined;
   let buttons;
@@ -395,4 +399,4 @@ async function notifyAdmin(text) {
   }
 }
 
-module.exports = { init, getBot, sendPost, deleteChannelMessage, buildReplyMarkup, notifyAdmin };
+module.exports = { init, getBot, getBotInfo, sendPost, deleteChannelMessage, buildReplyMarkup, notifyAdmin };
