@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon } from 'lucide-react';
+import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { Channel, Post, Template } from '@/lib/types';
@@ -13,10 +13,12 @@ import { ChannelsTab } from '@/features/ChannelsTab';
 import { TemplatesTab } from '@/features/TemplatesTab';
 import { StatsTab } from '@/features/StatsTab';
 import { CalendarTab } from '@/features/CalendarTab';
+import { PasswordDialog } from '@/features/PasswordDialog';
 
 export function DashboardPage() {
   const nav = useNavigate();
-  const [me, setMe] = useState<{ username: string } | null>(null);
+  const [me, setMe] = useState<{ username: string; default_password?: boolean } | null>(null);
+  const [showPw, setShowPw] = useState(false);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -47,13 +49,17 @@ export function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
+  const loadMe = useCallback(() => {
     api
-      .get<{ username: string }>('/api/auth/me')
+      .get<{ username: string; default_password?: boolean }>('/api/auth/me')
       .then(setMe)
       .catch(() => nav('/login'));
+  }, [nav]);
+
+  useEffect(() => {
+    loadMe();
     refresh();
-  }, [nav, refresh]);
+  }, [loadMe, refresh]);
 
   async function logout() {
     await api.post('/api/auth/logout');
@@ -84,13 +90,32 @@ export function DashboardPage() {
           </div>
           <div className="flex items-center gap-3">
             {me && <Badge variant="secondary">{me.username}</Badge>}
+            <Button variant="ghost" size="sm" onClick={() => setShowPw(true)}>
+              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
+              Parola
+            </Button>
             <Button variant="ghost" size="sm" onClick={logout}>
               <LogOut className="mr-1.5 h-3.5 w-3.5" />
               Çıkış
             </Button>
           </div>
         </div>
+        {me?.default_password && (
+          <div className="border-t bg-destructive/10 text-destructive">
+            <div className="container flex items-center gap-2 py-2 text-xs">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                Varsayılan parola kullanılıyor — güvenlik riski.{' '}
+                <button className="font-semibold underline" onClick={() => setShowPw(true)}>
+                  Hemen değiştir
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
       </header>
+
+      {showPw && <PasswordDialog onClose={() => setShowPw(false)} onChanged={loadMe} />}
 
       <main className="container py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>

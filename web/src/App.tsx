@@ -1,12 +1,10 @@
-import { Component, ReactNode, useEffect, useState } from 'react';
+import { Component, ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from '@/components/ui/sonner';
 import { LoginPage } from '@/pages/Login';
 import { DashboardPage } from '@/pages/Dashboard';
-import { api } from '@/lib/api';
+import { useMe } from '@/hooks/useAuth';
 import { Loader2, Radio } from 'lucide-react';
-
-type AuthState = 'loading' | 'authed' | 'guest';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -54,21 +52,10 @@ function FullScreenLoader({ label }: { label: string }) {
 }
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>('loading');
+  const { isLoading, isError } = useMe();
 
-  useEffect(() => {
-    api
-      .get('/api/auth/me')
-      .then(() => setState('authed'))
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.warn('[auth] /me failed:', err.message);
-        setState('guest');
-      });
-  }, []);
-
-  if (state === 'loading') return <FullScreenLoader label="Yükleniyor…" />;
-  if (state === 'guest') return <Navigate to="/login" replace />;
+  if (isLoading) return <FullScreenLoader label="Yükleniyor…" />;
+  if (isError) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

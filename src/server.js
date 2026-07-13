@@ -20,6 +20,23 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === 'production';
 
+// Prod'da SESSION_SECRET zorunlu — default ile oturum çerezleri taklit edilebilir.
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (isProd && (!SESSION_SECRET || SESSION_SECRET === 'dev-secret-change-me')) {
+  console.error(
+    '[server] FATAL: production ortamında SESSION_SECRET ayarlanmalı (rastgele, uzun bir değer). ' +
+      'Railway → Variables ekranından SESSION_SECRET ekleyin.',
+  );
+  process.exit(1);
+}
+// Prod'da default admin parolası uyarısı
+if (isProd && !process.env.ADMIN_PASSWORD) {
+  console.warn(
+    '[server] UYARI: ADMIN_PASSWORD set edilmemiş — varsayılan parola kullanılıyor. ' +
+      'Panelden parolanızı hemen değiştirin.',
+  );
+}
+
 ensureAdmin();
 seedDefaults();
 bot.init();
@@ -33,7 +50,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+    secret: SESSION_SECRET || 'dev-secret-change-me',
     resave: false,
     saveUninitialized: false,
     cookie: {
