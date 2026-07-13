@@ -20,27 +20,38 @@ router.get('/', (req, res) => {
 });
 
 router.post('/', (req, res) => {
-  const { name, text, buttons, channel_id } = req.body || {};
+  const { name, text, buttons, channel_id, photo_path, media_type } = req.body || {};
   if (!name || !text) return res.status(400).json({ error: 'name ve text zorunlu' });
   const r = db
-    .prepare('INSERT INTO templates (name, text, buttons, channel_id) VALUES (?, ?, ?, ?)')
-    .run(name, text, buttons ? JSON.stringify(buttons) : null, channel_id ? Number(channel_id) : null);
+    .prepare(
+      'INSERT INTO templates (name, text, buttons, channel_id, photo_path, media_type) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+    .run(
+      name,
+      text,
+      buttons ? JSON.stringify(buttons) : null,
+      channel_id ? Number(channel_id) : null,
+      photo_path || null,
+      media_type || null,
+    );
   audit(actorOf(req), 'template.create', 'template', r.lastInsertRowid, name);
   res.json({ id: r.lastInsertRowid });
 });
 
 router.put('/:id', (req, res) => {
-  const { name, text, buttons, channel_id } = req.body || {};
+  const { name, text, buttons, channel_id, photo_path, media_type } = req.body || {};
   if (!name || !text) return res.status(400).json({ error: 'name ve text zorunlu' });
   const existing = db.prepare('SELECT id FROM templates WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Şablon bulunamadı' });
   db.prepare(
-    'UPDATE templates SET name = ?, text = ?, buttons = ?, channel_id = ? WHERE id = ?',
+    'UPDATE templates SET name = ?, text = ?, buttons = ?, channel_id = ?, photo_path = ?, media_type = ? WHERE id = ?',
   ).run(
     name,
     text,
     buttons ? JSON.stringify(buttons) : null,
     channel_id ? Number(channel_id) : null,
+    photo_path || null,
+    media_type || null,
     req.params.id,
   );
   audit(actorOf(req), 'template.update', 'template', req.params.id, name);

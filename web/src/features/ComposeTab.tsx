@@ -350,12 +350,20 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
   function applyTemplate(id: string) {
     const t = templates.find((t) => String(t.id) === id);
     if (!t) return;
-    update('text', t.text);
-    if (t.buttons) {
-      try {
-        update('buttons', JSON.parse(t.buttons));
-      } catch {}
-    }
+    setDraft((d) => {
+      const next = { ...d, text: t.text };
+      if (t.buttons) {
+        try { next.buttons = JSON.parse(t.buttons); } catch {}
+      }
+      // Şablon medyası varsa uygula (tekli medya)
+      if (t.photo_path) {
+        next.photo_path = t.photo_path;
+        next.photo_url = '/uploads/' + t.photo_path;
+        next.media_type = (t.media_type as MediaType) || 'photo';
+        next.media_group = [];
+      }
+      return next;
+    });
     toast.success(`"${t.name}" şablonu uygulandı`);
   }
 
@@ -373,6 +381,9 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
         text: draft.text,
         buttons: cleanButtons.length ? cleanButtons : null,
         channel_id: draft.channel_id, // seçili kanala özel kaydeder
+        // Tekli medya varsa şablona da kaydet (media_group hariç)
+        photo_path: draft.media_group.length === 0 ? draft.photo_path : null,
+        media_type: draft.media_group.length === 0 && draft.photo_path ? draft.media_type : null,
       });
       toast.success('Şablon kaydedildi');
     } catch (e: any) {

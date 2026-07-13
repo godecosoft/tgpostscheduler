@@ -1,13 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { qk } from '@/lib/queryClient';
-import type { ButtonGrid, Template } from '@/lib/types';
+import type { ButtonGrid, MediaType, Template } from '@/lib/types';
 
 export interface TemplateInput {
   name: string;
   text: string;
   buttons?: ButtonGrid | null;
   channel_id?: number | null;
+  photo_path?: string | null;
+  media_type?: MediaType | null;
 }
 
 export function useTemplates() {

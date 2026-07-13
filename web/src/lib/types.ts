@@ -81,6 +81,8 @@ export interface Template {
   text: string;
   buttons: string | null;
   channel_id: number | null; // null = genel (tüm kanallar)
+  photo_path: string | null;
+  media_type: MediaType | null;
   created_at: string;
 }
 

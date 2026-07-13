@@ -139,6 +139,52 @@ router.get('/', (req, res) => {
   res.json(db.prepare(sql).all(...params));
 });
 
+// CSV dışa aktarım — geçmiş/istatistik için. Cookie ile authed <a download> çalışır.
+function csvCell(v) {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+router.get('/export.csv', (req, res) => {
+  const { status, channel_id, q } = req.query;
+  let sql = `SELECT p.id, c.name as channel_name, p.status, p.scheduled_at, p.sent_at,
+             p.text, p.views, p.reactions, p.error
+             FROM posts p JOIN channels c ON c.id = p.channel_id WHERE 1=1`;
+  const params = [];
+  if (status) { sql += ' AND p.status = ?'; params.push(status); }
+  if (channel_id) { sql += ' AND p.channel_id = ?'; params.push(channel_id); }
+  if (q) { sql += ' AND p.text LIKE ?'; params.push('%' + q + '%'); }
+  sql += ' ORDER BY p.scheduled_at DESC LIMIT 5000';
+  const rows = db.prepare(sql).all(...params);
+
+  const header = ['id', 'kanal', 'durum', 'zamanlanan', 'gonderilen', 'metin', 'goruntulenme', 'reaksiyon', 'hata'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    let reactTotal = 0;
+    try {
+      const m = r.reactions ? JSON.parse(r.reactions) : {};
+      reactTotal = Object.values(m).reduce((a, b) => a + Number(b || 0), 0);
+    } catch {}
+    lines.push(
+      [
+        r.id,
+        csvCell(r.channel_name),
+        r.status,
+        r.scheduled_at || '',
+        r.sent_at || '',
+        csvCell((r.text || '').replace(/\s+/g, ' ').slice(0, 500)),
+        r.views || 0,
+        reactTotal,
+        csvCell(r.error || ''),
+      ].join(','),
+    );
+  }
+  const csv = '﻿' + lines.join('\r\n'); // BOM → Excel Türkçe karakterleri doğru okur
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="postlar.csv"');
+  res.send(csv);
+});
+
 router.get('/:id', (req, res) => {
   const post = db
     .prepare(

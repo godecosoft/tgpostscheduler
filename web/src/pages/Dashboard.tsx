@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle, ScrollText } from 'lucide-react';
+import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle, ScrollText, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Post } from '@/lib/types';
 import { useMe, useLogout } from '@/hooks/useAuth';
@@ -221,6 +221,15 @@ export function DashboardPage() {
                   🔄 Hepsini Tekrar Dene
                 </Button>
               )}
+              <a
+                href={`/api/posts/export.csv${historyFilter === 'all' ? '' : `?status=${historyFilter}`}`}
+                className="ml-auto"
+                download
+              >
+                <Button size="sm" variant="outline">
+                  <Download className="mr-1.5 h-3.5 w-3.5" /> CSV indir
+                </Button>
+              </a>
             </div>
             <PostList posts={history} onEdit={startEdit} filterable channels={channels} emptyMessage="Henüz gönderim yok." />
           </TabsContent>

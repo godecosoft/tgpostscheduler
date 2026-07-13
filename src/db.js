@@ -89,6 +89,9 @@ safeAddColumn('posts', 'time_range_minutes', 'INTEGER DEFAULT 0'); // rastgele d
 
 // Şablonları kanal bazında kaydedebilmek için: NULL = genel (tüm kanallar)
 safeAddColumn('templates', 'channel_id', 'INTEGER REFERENCES channels(id) ON DELETE CASCADE');
+// Şablona tek medya (foto/video vs.) bağlama
+safeAddColumn('templates', 'photo_path', 'TEXT');
+safeAddColumn('templates', 'media_type', 'TEXT');
 
 // Otomatik retry: kaç kez denendiği (kalıcı 'failed' olmadan önce)
 safeAddColumn('posts', 'attempts', 'INTEGER DEFAULT 0');

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,10 +12,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Trash2, Pencil, Plus, X } from 'lucide-react';
+import { Trash2, Pencil, Plus, X, ImageIcon, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { api } from '@/lib/api';
 import { useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '@/hooks/useTemplates';
-import type { Template, Channel, Button as BtnType } from '@/lib/types';
+import type { Template, Channel, Button as BtnType, MediaType, UploadResult } from '@/lib/types';
 
 interface Props {
   templates: Template[];
@@ -28,9 +29,12 @@ interface FormState {
   name: string;
   text: string;
   buttons: BtnType[];
+  photo_path: string | null;
+  photo_url: string | null;
+  media_type: MediaType | null;
 }
 
-const emptyForm: FormState = { name: '', text: '', buttons: [] };
+const emptyForm: FormState = { name: '', text: '', buttons: [], photo_path: null, photo_url: null, media_type: null };
 
 // Şablonun buttons string'ini düz Button listesine indir (grid → flat)
 function parseButtons(raw: string | null): BtnType[] {
@@ -47,10 +51,24 @@ export function TemplatesTab({ templates, channels }: Props) {
   const [channelId, setChannelId] = useState<string>(GENERAL);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const createM = useCreateTemplate();
   const updateM = useUpdateTemplate();
   const deleteM = useDeleteTemplate();
+
+  async function uploadMedia(file: File) {
+    setUploading(true);
+    try {
+      const r = await api.upload<UploadResult>('/api/posts/upload', file);
+      setForm((f) => ({ ...f, photo_path: r.path, photo_url: r.url, media_type: r.media_type }));
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function resetForm() {
     setForm(emptyForm);
@@ -60,7 +78,14 @@ export function TemplatesTab({ templates, channels }: Props) {
 
   function startEdit(t: Template) {
     setEditingId(t.id);
-    setForm({ name: t.name, text: t.text, buttons: parseButtons(t.buttons) });
+    setForm({
+      name: t.name,
+      text: t.text,
+      buttons: parseButtons(t.buttons),
+      photo_path: t.photo_path,
+      photo_url: t.photo_path ? '/uploads/' + t.photo_path : null,
+      media_type: t.media_type,
+    });
     setChannelId(t.channel_id == null ? GENERAL : String(t.channel_id));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -75,6 +100,8 @@ export function TemplatesTab({ templates, channels }: Props) {
       text: form.text,
       channel_id: channelId === GENERAL ? null : Number(channelId),
       buttons: cleanButtons.length ? cleanButtons : null,
+      photo_path: form.photo_path,
+      media_type: form.media_type,
     };
     try {
       if (editingId) {
@@ -166,6 +193,58 @@ export function TemplatesTab({ templates, channels }: Props) {
               />
             </div>
 
+            {/* Medya (opsiyonel) */}
+            <div className="space-y-2">
+              <Label>Medya (opsiyonel)</Label>
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                accept="image/*,video/*,.gif,.mp4,.mov,application/pdf"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadMedia(f);
+                  e.target.value = '';
+                }}
+              />
+              {form.photo_url ? (
+                <div className="flex items-center gap-3 rounded-md border p-2">
+                  {form.media_type === 'photo' || form.media_type === 'animation' ? (
+                    <img src={form.photo_url} alt="" className="h-14 w-14 rounded object-cover" />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded bg-muted">
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <span className="text-xs text-muted-foreground">{form.media_type}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => setForm((f) => ({ ...f, photo_path: null, photo_url: null, media_type: null }))}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  {uploading ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ImageIcon className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  Medya Yükle
+                </Button>
+              )}
+            </div>
+
             {/* Butonlar */}
             <div className="space-y-2">
               <Label>Butonlar (opsiyonel)</Label>
@@ -231,9 +310,16 @@ export function TemplatesTab({ templates, channels }: Props) {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-medium">{t.name}</div>
-                      <Badge variant="secondary" className="mt-1 text-[10px] font-normal">
-                        {channelName(t.channel_id) ? `📡 ${channelName(t.channel_id)}` : '🌐 Genel'}
-                      </Badge>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        <Badge variant="secondary" className="text-[10px] font-normal">
+                          {channelName(t.channel_id) ? `📡 ${channelName(t.channel_id)}` : '🌐 Genel'}
+                        </Badge>
+                        {t.photo_path && (
+                          <Badge variant="outline" className="gap-1 text-[10px] font-normal">
+                            <ImageIcon className="h-3 w-3" /> {t.media_type || 'medya'}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => startEdit(t)}>
