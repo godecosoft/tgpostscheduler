@@ -9,6 +9,10 @@ uploads/
 # Frontend build artifacts
 web/dist/
 web/node_modules/
+web/*.tsbuildinfo
+web/vite.config.d.ts
+web/vite.config.js
+web/package-lock.json
 
 # Editor
 .vscode/

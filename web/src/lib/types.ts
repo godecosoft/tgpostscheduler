@@ -74,6 +74,7 @@ export interface Template {
   name: string;
   text: string;
   buttons: string | null;
+  channel_id: number | null; // null = genel (tüm kanallar)
   created_at: string;
 }
 

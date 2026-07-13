@@ -87,6 +87,9 @@ safeAddColumn('posts', 'reactions', 'TEXT'); // JSON: {"👍":12, "❤":5}
 safeAddColumn('posts', 'last_stats_update', 'TEXT');
 safeAddColumn('posts', 'time_range_minutes', 'INTEGER DEFAULT 0'); // rastgele dağıtım penceresi
 
+// Şablonları kanal bazında kaydedebilmek için: NULL = genel (tüm kanallar)
+safeAddColumn('templates', 'channel_id', 'INTEGER REFERENCES channels(id) ON DELETE CASCADE');
+
 // İlk admin kullanıcı setup
 function ensureAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';

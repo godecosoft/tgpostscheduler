@@ -213,7 +213,7 @@ export function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="templates">
-            <TemplatesTab templates={templates} onChanged={refresh} />
+            <TemplatesTab templates={templates} channels={channels} onChanged={refresh} />
           </TabsContent>
         </Tabs>
       </main>

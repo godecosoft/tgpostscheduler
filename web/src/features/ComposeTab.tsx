@@ -435,9 +435,18 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
               <Select onValueChange={applyTemplate}>
                 <SelectTrigger><SelectValue placeholder="Şablon seç…" /></SelectTrigger>
                 <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                  ))}
+                  {templates
+                    .filter(
+                      (t) =>
+                        t.channel_id == null ||
+                        t.channel_id === draft.channel_id,
+                    )
+                    .map((t) => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.channel_id == null ? '🌐 ' : '📡 '}
+                        {t.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

@@ -3,16 +3,27 @@ const { db } = require('../db');
 
 const router = express.Router();
 
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
+  // ?channel_id=N → o kanala özel + genel (channel_id IS NULL) şablonlar
+  const cid = req.query.channel_id;
+  if (cid !== undefined && cid !== '') {
+    return res.json(
+      db
+        .prepare(
+          'SELECT * FROM templates WHERE channel_id = ? OR channel_id IS NULL ORDER BY channel_id IS NULL, created_at DESC',
+        )
+        .all(Number(cid)),
+    );
+  }
   res.json(db.prepare('SELECT * FROM templates ORDER BY created_at DESC').all());
 });
 
 router.post('/', (req, res) => {
-  const { name, text, buttons } = req.body || {};
+  const { name, text, buttons, channel_id } = req.body || {};
   if (!name || !text) return res.status(400).json({ error: 'name ve text zorunlu' });
   const r = db
-    .prepare('INSERT INTO templates (name, text, buttons) VALUES (?, ?, ?)')
-    .run(name, text, buttons ? JSON.stringify(buttons) : null);
+    .prepare('INSERT INTO templates (name, text, buttons, channel_id) VALUES (?, ?, ?, ?)')
+    .run(name, text, buttons ? JSON.stringify(buttons) : null, channel_id ? Number(channel_id) : null);
   res.json({ id: r.lastInsertRowid });
 });
 
