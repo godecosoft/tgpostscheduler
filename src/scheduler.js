@@ -82,12 +82,28 @@ async function processPendingPosts() {
         d.setMinutes(d.getMinutes() + offset);
         nextDate = d.toISOString();
       }
+
+      // --- Seri limitleri: max sayı / bitiş tarihi ---
+      const thisOccurrence = post.occurrence_num || 1;
+      if (nextDate && post.max_occurrences && thisOccurrence >= post.max_occurrences) {
+        console.log(
+          `[scheduler] seri #${post.series_id || post.id} max ${post.max_occurrences} gönderime ulaştı — durduruluyor`,
+        );
+        nextDate = null;
+      }
+      if (nextDate && post.recurrence_end && new Date(nextDate) > new Date(post.recurrence_end)) {
+        console.log(
+          `[scheduler] seri #${post.series_id || post.id} bitiş tarihini geçti (${post.recurrence_end}) — durduruluyor`,
+        );
+        nextDate = null;
+      }
+
       if (nextDate) {
         db.prepare(
           `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
            scheduled_at, recurring, cron_expression, auto_delete_minutes, media_type, media_group,
-           time_range_minutes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           time_range_minutes, series_id, occurrence_num, max_occurrences, recurrence_end)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           post.channel_id,
           post.text,
@@ -103,6 +119,10 @@ async function processPendingPosts() {
           post.media_type,
           post.media_group,
           post.time_range_minutes || 0,
+          post.series_id || String(post.id),
+          thisOccurrence + 1,
+          post.max_occurrences || null,
+          post.recurrence_end || null,
         );
       }
     } catch (err) {

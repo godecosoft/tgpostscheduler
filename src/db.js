@@ -93,6 +93,12 @@ safeAddColumn('templates', 'channel_id', 'INTEGER REFERENCES channels(id) ON DEL
 // Otomatik retry: kaç kez denendiği (kalıcı 'failed' olmadan önce)
 safeAddColumn('posts', 'attempts', 'INTEGER DEFAULT 0');
 
+// Recurring seri yönetimi
+safeAddColumn('posts', 'series_id', 'TEXT'); // aynı tekrarlı serinin kimliği (ilk postun id'si)
+safeAddColumn('posts', 'occurrence_num', 'INTEGER DEFAULT 1'); // bu, serinin kaçıncı gönderimi
+safeAddColumn('posts', 'max_occurrences', 'INTEGER'); // NULL = sınırsız; N kez sonra dur
+safeAddColumn('posts', 'recurrence_end', 'TEXT'); // ISO tarih; bu tarihten sonra üretme
+
 // İlk admin kullanıcı setup
 function ensureAdmin() {
   const username = process.env.ADMIN_USERNAME || 'admin';

@@ -150,7 +150,7 @@ router.post('/', (req, res) => {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
-    time_range_minutes,
+    time_range_minutes, max_occurrences, recurrence_end,
   } = req.body || {};
 
   if (!channel_id || (!text && !photo_path && !media_group) || !scheduled_at) {
@@ -163,8 +163,8 @@ router.post('/', (req, res) => {
     .prepare(
       `INSERT INTO posts (channel_id, text, photo_path, buttons, parse_mode, disable_preview, silent,
        scheduled_at, recurring, media_type, media_group, cron_expression, auto_delete_minutes,
-       time_range_minutes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       time_range_minutes, occurrence_num, max_occurrences, recurrence_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     )
     .run(
       channel_id,
@@ -181,7 +181,16 @@ router.post('/', (req, res) => {
       cron_expression || null,
       auto_delete_minutes ? Number(auto_delete_minutes) : null,
       time_range_minutes ? Number(time_range_minutes) : 0,
+      max_occurrences ? Number(max_occurrences) : null,
+      recurrence_end || null,
     );
+  // Tekrarlı seri ise kendi id'sini series_id yap (occurrence'lar bunu paylaşır)
+  if (cron_expression || recurring) {
+    db.prepare('UPDATE posts SET series_id = ? WHERE id = ?').run(
+      String(result.lastInsertRowid),
+      result.lastInsertRowid,
+    );
+  }
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -194,14 +203,15 @@ router.put('/:id', (req, res) => {
     channel_id, text, photo_path, buttons, parse_mode,
     disable_preview, silent, scheduled_at, recurring,
     media_type, media_group, cron_expression, auto_delete_minutes,
-    time_range_minutes,
+    time_range_minutes, max_occurrences, recurrence_end,
   } = req.body || {};
 
   db.prepare(
     `UPDATE posts SET channel_id = ?, text = ?, photo_path = ?, buttons = ?, parse_mode = ?,
      disable_preview = ?, silent = ?, scheduled_at = ?, recurring = ?,
      media_type = ?, media_group = ?, cron_expression = ?, auto_delete_minutes = ?,
-     time_range_minutes = ?, status = 'pending', error = NULL, attempts = 0
+     time_range_minutes = ?, max_occurrences = ?, recurrence_end = ?,
+     status = 'pending', error = NULL, attempts = 0
      WHERE id = ?`,
   ).run(
     channel_id ?? post.channel_id,
@@ -218,8 +228,28 @@ router.put('/:id', (req, res) => {
     cron_expression ?? post.cron_expression,
     auto_delete_minutes != null ? Number(auto_delete_minutes) : post.auto_delete_minutes,
     time_range_minutes != null ? Number(time_range_minutes) : (post.time_range_minutes || 0),
+    max_occurrences !== undefined ? (max_occurrences ? Number(max_occurrences) : null) : post.max_occurrences,
+    recurrence_end !== undefined ? (recurrence_end || null) : post.recurrence_end,
     req.params.id,
   );
+  res.json({ ok: true });
+});
+
+// Tekrarlı seriyi duraklat — bekleyen occurrence'ı 'paused' yap (scheduler atlar)
+router.post('/:id/pause', (req, res) => {
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Bulunamadı' });
+  if (post.status !== 'pending') return res.status(400).json({ error: 'Sadece bekleyen post duraklatılabilir' });
+  db.prepare(`UPDATE posts SET status = 'paused' WHERE id = ?`).run(req.params.id);
+  res.json({ ok: true });
+});
+
+// Duraklatılmış seriyi devam ettir — 'pending' yap
+router.post('/:id/resume', (req, res) => {
+  const post = db.prepare('SELECT * FROM posts WHERE id = ?').get(req.params.id);
+  if (!post) return res.status(404).json({ error: 'Bulunamadı' });
+  if (post.status !== 'paused') return res.status(400).json({ error: 'Sadece duraklatılmış post devam ettirilebilir' });
+  db.prepare(`UPDATE posts SET status = 'pending' WHERE id = ?`).run(req.params.id);
   res.json({ ok: true });
 });
 

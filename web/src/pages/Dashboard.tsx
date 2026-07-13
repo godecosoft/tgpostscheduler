@@ -66,11 +66,15 @@ export function DashboardPage() {
     nav('/login');
   }
 
-  const pending = useMemo(() => posts.filter((p) => p.status === 'pending'), [posts]);
+  // "Zamanlanmış" sekmesi: bekleyen + duraklatılmış seriler
+  const pending = useMemo(
+    () => posts.filter((p) => p.status === 'pending' || p.status === 'paused'),
+    [posts],
+  );
   const history = useMemo(() => {
-    const sent = posts.filter((p) => p.status !== 'pending');
-    if (historyFilter === 'all') return sent;
-    return sent.filter((p) => p.status === historyFilter);
+    const done = posts.filter((p) => p.status !== 'pending' && p.status !== 'paused');
+    if (historyFilter === 'all') return done;
+    return done.filter((p) => p.status === historyFilter);
   }, [posts, historyFilter]);
 
   return (

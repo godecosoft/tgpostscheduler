@@ -21,7 +21,7 @@ import type {
 } from '@/lib/types';
 import { localInputToISO, toLocalInputValue, checkTelegramHtml, formatDateTime } from '@/lib/utils';
 import {
-  buildCron, nextFirings, applyRandomOffset, nextFiringsWithRange,
+  buildCron, nextFirings, applyRandomOffset, nextFiringsWithRange, parseCronToSchedule,
   WEEKDAY_LABELS, SCHEDULE_MODE_LABELS,
 } from '@/lib/schedule';
 import { TelegramPreview } from './TelegramPreview';
@@ -55,6 +55,8 @@ const emptyDraft = (channelId: number | null): ComposeDraft => ({
   monthly_time: '12:00',
   cron_expression: '',
   time_range_minutes: 0,
+  max_occurrences: null,
+  recurrence_end: '',
   auto_delete_minutes: null,
   silent: false,
   disable_preview: false,
@@ -72,6 +74,8 @@ function postToDraft(p: Post): ComposeDraft {
         }))
       : [];
   } catch {}
+  // Cron varsa üretildiği moda geri çöz (weekly/monthly/interval/custom korunur)
+  const parsed = p.cron_expression ? parseCronToSchedule(p.cron_expression) : { schedule_mode: 'oneoff' as const };
   return {
     channel_id: p.channel_id,
     text: p.text || '',
@@ -81,17 +85,18 @@ function postToDraft(p: Post): ComposeDraft {
     media_group: mediaGroup,
     buttons,
     scheduled_at: toLocalInputValue(new Date(p.scheduled_at)),
-    // Cron varsa custom mode'a hidrate — kullanıcı isterse weekly/monthly'e değiştirir
-    schedule_mode: p.cron_expression ? 'custom' : 'oneoff',
-    interval_value: 1,
-    interval_unit: 'hour',
-    interval_time: '12:00',
-    weekdays: [1],
-    weekly_time: '12:00',
-    monthly_day: 1,
-    monthly_time: '12:00',
-    cron_expression: p.cron_expression || '',
+    schedule_mode: parsed.schedule_mode ?? 'oneoff',
+    interval_value: parsed.interval_value ?? 1,
+    interval_unit: parsed.interval_unit ?? 'hour',
+    interval_time: parsed.interval_time ?? '12:00',
+    weekdays: parsed.weekdays ?? [1],
+    weekly_time: parsed.weekly_time ?? '12:00',
+    monthly_day: parsed.monthly_day ?? 1,
+    monthly_time: parsed.monthly_time ?? '12:00',
+    cron_expression: parsed.cron_expression ?? p.cron_expression ?? '',
     time_range_minutes: p.time_range_minutes || 0,
+    max_occurrences: p.max_occurrences ?? null,
+    recurrence_end: p.recurrence_end ? toLocalInputValue(new Date(p.recurrence_end)) : '',
     auto_delete_minutes: p.auto_delete_minutes,
     silent: !!p.silent,
     disable_preview: !!p.disable_preview,
@@ -351,6 +356,9 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
         cron_expression: cron,
         auto_delete_minutes: draft.auto_delete_minutes || null,
         time_range_minutes: draft.time_range_minutes || 0,
+        // Seri limitleri sadece tekrarlı modda gönderilir
+        max_occurrences: cron && draft.max_occurrences ? Number(draft.max_occurrences) : null,
+        recurrence_end: cron && draft.recurrence_end ? localInputToISO(draft.recurrence_end) : null,
       };
 
       if (editingPost) {
@@ -922,6 +930,46 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
                 </p>
               )}
             </div>
+
+            {/* Seri limitleri — sadece tekrarlı modlarda */}
+            {draft.schedule_mode !== 'oneoff' && (
+              <div className="space-y-2 rounded-md border border-dashed p-2.5">
+                <Label className="flex items-center gap-1.5 text-xs">
+                  <Repeat className="h-3 w-3" /> Seri Limiti (opsiyonel — boşsa sonsuz)
+                </Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground">Max gönderim sayısı</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="Sınırsız"
+                      value={draft.max_occurrences ?? ''}
+                      onChange={(e) =>
+                        update('max_occurrences', e.target.value ? Math.max(1, Number(e.target.value)) : null)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[11px] text-muted-foreground">Bitiş tarihi</span>
+                    <Input
+                      type="datetime-local"
+                      value={draft.recurrence_end}
+                      onChange={(e) => update('recurrence_end', e.target.value)}
+                    />
+                  </div>
+                </div>
+                {(draft.max_occurrences || draft.recurrence_end) && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Seri
+                    {draft.max_occurrences ? ` ${draft.max_occurrences} gönderimden sonra` : ''}
+                    {draft.max_occurrences && draft.recurrence_end ? ' veya' : ''}
+                    {draft.recurrence_end ? ` ${formatDateTime(localInputToISO(draft.recurrence_end))} sonrasında` : ''}{' '}
+                    otomatik durur.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Sonraki gönderim önizlemesi */}
             <SchedulePreview draft={draft} />

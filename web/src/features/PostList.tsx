@@ -1,7 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle } from 'lucide-react';
+import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
@@ -19,6 +19,7 @@ function statusBadge(status: Post['status']) {
   if (status === 'sent') return <Badge variant="success">Gönderildi</Badge>;
   if (status === 'failed') return <Badge variant="destructive">Başarısız</Badge>;
   if (status === 'deleted') return <Badge variant="secondary">Silindi</Badge>;
+  if (status === 'paused') return <Badge variant="secondary">⏸ Duraklatıldı</Badge>;
   return <Badge variant="warning">Bekliyor</Badge>;
 }
 
@@ -73,6 +74,26 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
     }
   }
 
+  async function pause(id: number) {
+    try {
+      await api.post(`/api/posts/${id}/pause`);
+      toast.success('Seri duraklatıldı');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
+  async function resume(id: number) {
+    try {
+      await api.post(`/api/posts/${id}/resume`);
+      toast.success('Seri devam ediyor');
+      onChanged();
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+
   if (posts.length === 0) {
     return (
       <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
@@ -120,6 +141,18 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
                     {p.time_range_minutes > 0 && (
                       <Badge variant="outline" className="gap-1">
                         <Shuffle className="h-3 w-3" /> ±{p.time_range_minutes}dk rastgele
+                      </Badge>
+                    )}
+                    {p.cron_expression && (p.occurrence_num > 1 || p.max_occurrences) && (
+                      <Badge variant="outline" className="gap-1">
+                        <Hash className="h-3 w-3" />
+                        {p.occurrence_num}
+                        {p.max_occurrences ? `/${p.max_occurrences}` : ''}
+                      </Badge>
+                    )}
+                    {p.recurrence_end && (
+                      <Badge variant="outline" className="gap-1">
+                        <CalendarX className="h-3 w-3" /> bitiş: {formatDateTime(p.recurrence_end)}
                       </Badge>
                     )}
                     {p.delete_at && p.status === 'sent' && (
@@ -187,6 +220,16 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
                   {showSendNow && p.status !== 'sent' && p.status !== 'failed' && (
                     <Button size="sm" variant="secondary" onClick={() => sendNow(p.id)}>
                       <Send className="mr-1 h-3.5 w-3.5" /> Gönder
+                    </Button>
+                  )}
+                  {p.status === 'pending' && p.cron_expression && (
+                    <Button size="sm" variant="outline" onClick={() => pause(p.id)}>
+                      <Pause className="mr-1 h-3.5 w-3.5" /> Duraklat
+                    </Button>
+                  )}
+                  {p.status === 'paused' && (
+                    <Button size="sm" variant="default" onClick={() => resume(p.id)}>
+                      <Play className="mr-1 h-3.5 w-3.5" /> Devam Et
                     </Button>
                   )}
                   <Button size="sm" variant="ghost" onClick={() => remove(p.id)}>

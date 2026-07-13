@@ -51,7 +51,7 @@ export interface Post {
   disable_preview: number;
   silent: number;
   scheduled_at: string;
-  status: 'pending' | 'sent' | 'failed' | 'deleted';
+  status: 'pending' | 'sent' | 'failed' | 'deleted' | 'paused';
   sent_at: string | null;
   error: string | null;
   telegram_message_id: number | null;
@@ -67,6 +67,12 @@ export interface Post {
   reactions: string | null; // JSON {"👍":12,...}
   last_stats_update: string | null;
   time_range_minutes: number;
+  // Recurring seri
+  series_id: string | null;
+  occurrence_num: number;
+  max_occurrences: number | null;
+  recurrence_end: string | null;
+  attempts?: number;
 }
 
 export interface Template {
@@ -108,6 +114,9 @@ export interface ComposeDraft {
   cron_expression: string;
   // Tüm modlar için: hesaplanan zamana 0..N dakika rastgele offset ekle
   time_range_minutes: number;
+  // Recurring seri limitleri (oneoff dışında)
+  max_occurrences: number | null; // null = sınırsız
+  recurrence_end: string;          // datetime-local ("" = yok)
 
   auto_delete_minutes: number | null;
   silent: boolean;

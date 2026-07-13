@@ -39,6 +39,55 @@ export function buildCron(draft: ComposeDraft): string | null {
   }
 }
 
+/** buildCron'un ürettiği cron'u tekrar draft schedule alanlarına çözer (edit hidrasyonu). */
+export type ParsedSchedule = Partial<
+  Pick<
+    ComposeDraft,
+    | 'schedule_mode'
+    | 'interval_value'
+    | 'interval_unit'
+    | 'interval_time'
+    | 'weekdays'
+    | 'weekly_time'
+    | 'monthly_day'
+    | 'monthly_time'
+    | 'cron_expression'
+  >
+>;
+
+export function parseCronToSchedule(cron: string): ParsedSchedule {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const parts = (cron || '').trim().split(/\s+/);
+  if (parts.length !== 5) return { schedule_mode: 'custom', cron_expression: cron };
+  const [min, hr, dom, mon, dow] = parts;
+  const isNum = (s: string) => /^\d+$/.test(s);
+  const isStep = (s: string) => /^\*\/\d+$/.test(s);
+  const stepVal = (s: string) => Number(s.slice(2));
+
+  // interval / dakika: */N * * * *
+  if (isStep(min) && hr === '*' && dom === '*' && mon === '*' && dow === '*') {
+    return { schedule_mode: 'interval', interval_unit: 'minute', interval_value: stepVal(min), interval_time: '12:00' };
+  }
+  // interval / saat: M */N * * *
+  if (isNum(min) && isStep(hr) && dom === '*' && mon === '*' && dow === '*') {
+    return { schedule_mode: 'interval', interval_unit: 'hour', interval_value: stepVal(hr), interval_time: `00:${pad(Number(min))}` };
+  }
+  // interval / gün: M H */N * *
+  if (isNum(min) && isNum(hr) && isStep(dom) && mon === '*' && dow === '*') {
+    return { schedule_mode: 'interval', interval_unit: 'day', interval_value: stepVal(dom), interval_time: `${pad(Number(hr))}:${pad(Number(min))}` };
+  }
+  // haftalık: M H * * <günler>
+  if (isNum(min) && isNum(hr) && dom === '*' && mon === '*' && dow !== '*') {
+    const weekdays = dow.split(',').map(Number).filter((n) => !Number.isNaN(n));
+    if (weekdays.length) return { schedule_mode: 'weekly', weekdays, weekly_time: `${pad(Number(hr))}:${pad(Number(min))}` };
+  }
+  // aylık: M H D * *
+  if (isNum(min) && isNum(hr) && isNum(dom) && mon === '*' && dow === '*') {
+    return { schedule_mode: 'monthly', monthly_day: Number(dom), monthly_time: `${pad(Number(hr))}:${pad(Number(min))}` };
+  }
+  return { schedule_mode: 'custom', cron_expression: cron };
+}
+
 /**
  * Verilen cron expression'a göre `from` tarihinden sonraki en yakın N firing'i hesaplar.
  * Browser-side, cron-parser kütüphanesine ihtiyaç duymaz — sadece dakika tarama.
