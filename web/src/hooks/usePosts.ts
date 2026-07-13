@@ -20,6 +20,9 @@ export interface PostPayload {
   cron_expression: string | null;
   auto_delete_minutes: number | null;
   time_range_minutes: number;
+  // Recurring seri limitleri (yalnızca tekrarlı modda dolu)
+  max_occurrences?: number | null;
+  recurrence_end?: string | null;
 }
 
 function invalidatePostsAndStats(qc: ReturnType<typeof useQueryClient>) {
@@ -73,6 +76,22 @@ export function useRetryPost() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.post(`/api/posts/${id}/retry`),
+    onSuccess: () => invalidatePostsAndStats(qc),
+  });
+}
+
+export function usePausePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post(`/api/posts/${id}/pause`),
+    onSuccess: () => invalidatePostsAndStats(qc),
+  });
+}
+
+export function useResumePost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post(`/api/posts/${id}/resume`),
     onSuccess: () => invalidatePostsAndStats(qc),
   });
 }

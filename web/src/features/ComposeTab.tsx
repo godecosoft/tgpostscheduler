@@ -24,6 +24,8 @@ import {
   buildCron, nextFirings, applyRandomOffset, nextFiringsWithRange, parseCronToSchedule,
   WEEKDAY_LABELS, SCHEDULE_MODE_LABELS,
 } from '@/lib/schedule';
+import { useCreatePost, useUpdatePost, useSendNow } from '@/hooks/usePosts';
+import { useCreateTemplate } from '@/hooks/useTemplates';
 import { TelegramPreview } from './TelegramPreview';
 
 const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
@@ -31,7 +33,6 @@ const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '�
 interface Props {
   channels: Channel[];
   templates: Template[];
-  onSaved: () => void;
   editingPost?: Post | null;
   onCancelEdit?: () => void;
 }
@@ -103,9 +104,13 @@ function postToDraft(p: Post): ComposeDraft {
   };
 }
 
-export function ComposeTab({ channels, templates, onSaved, editingPost, onCancelEdit }: Props) {
+export function ComposeTab({ channels, templates, editingPost, onCancelEdit }: Props) {
   const [draft, setDraft] = useState<ComposeDraft>(emptyDraft(channels[0]?.id ?? null));
   const [busy, setBusy] = useState(false);
+  const createPost = useCreatePost();
+  const updatePost = useUpdatePost();
+  const sendNowMutation = useSendNow();
+  const createTemplate = useCreateTemplate();
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const multiFileRef = useRef<HTMLInputElement>(null);
@@ -306,14 +311,13 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
       .map((row) => row.filter((b) => b.text && b.url))
       .filter((row) => row.length > 0);
     try {
-      await api.post('/api/templates', {
+      await createTemplate.mutateAsync({
         name,
         text: draft.text,
         buttons: cleanButtons.length ? cleanButtons : null,
         channel_id: draft.channel_id, // seçili kanala özel kaydeder
       });
       toast.success('Şablon kaydedildi');
-      onSaved(); // template listesini tazele
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -362,7 +366,7 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
         .filter((row) => row.length > 0);
 
       const payload = {
-        channel_id: draft.channel_id,
+        channel_id: draft.channel_id!,
         text: draft.text,
         photo_path: draft.photo_path,
         media_type: draft.media_type,
@@ -385,13 +389,13 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
 
       if (editingPost) {
         // EDIT modu: PUT
-        await api.put(`/api/posts/${editingPost.id}`, payload);
+        await updatePost.mutateAsync({ id: editingPost.id, payload });
         toast.success('Güncellendi ✏️');
         onCancelEdit?.();
       } else {
-        const r = await api.post<{ id: number }>('/api/posts', payload);
+        const r = await createPost.mutateAsync(payload);
         if (sendNow) {
-          await api.post(`/api/posts/${r.id}/send-now`);
+          await sendNowMutation.mutateAsync(r.id);
           toast.success('Gönderildi! 🚀');
         } else {
           toast.success(
@@ -401,7 +405,6 @@ export function ComposeTab({ channels, templates, onSaved, editingPost, onCancel
       }
 
       setDraft(emptyDraft(draft.channel_id));
-      onSaved();
     } catch (e: any) {
       toast.error(e.message);
     } finally {

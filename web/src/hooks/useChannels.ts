@@ -50,3 +50,19 @@ export function useTestChannel() {
     mutationFn: (id: number) => api.post(`/api/channels/${id}/test`),
   });
 }
+
+export interface ChannelHealth {
+  ok: boolean;
+  status?: string;
+  is_admin?: boolean;
+  can_post?: boolean;
+  can_delete?: boolean;
+  error?: string;
+}
+
+// Sağlık kontrolü tetiklenince çalışan bir GET — sonuç çağıran tarafta saklanır.
+export function useCheckChannelHealth() {
+  return useMutation({
+    mutationFn: (id: number) => api.get<ChannelHealth>(`/api/channels/${id}/health`),
+  });
+}

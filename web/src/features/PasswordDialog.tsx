@@ -4,16 +4,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { useChangePassword } from '@/hooks/useAuth';
 
 interface Props {
   onClose: () => void;
-  onChanged?: () => void;
 }
 
-export function PasswordDialog({ onClose, onChanged }: Props) {
+export function PasswordDialog({ onClose }: Props) {
   const [form, setForm] = useState({ current_password: '', new_password: '', confirm: '' });
   const [busy, setBusy] = useState(false);
+  const changePassword = useChangePassword();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -21,12 +21,11 @@ export function PasswordDialog({ onClose, onChanged }: Props) {
     if (form.new_password.length < 8) return toast.error('Yeni parola en az 8 karakter olmalı');
     setBusy(true);
     try {
-      await api.post('/api/auth/change-password', {
+      await changePassword.mutateAsync({
         current_password: form.current_password,
         new_password: form.new_password,
       });
       toast.success('Parola değiştirildi');
-      onChanged?.();
       onClose();
     } catch (e: any) {
       toast.error(e.message);

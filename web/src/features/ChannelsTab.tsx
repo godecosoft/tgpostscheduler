@@ -5,31 +5,30 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
 import type { Channel } from '@/lib/types';
+import {
+  useCreateChannel, useUpdateChannel, useDeleteChannel, useTestChannel,
+  useCheckChannelHealth, type ChannelHealth as Health,
+} from '@/hooks/useChannels';
 import { Trash2, Send, Info, Pencil, HeartPulse, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 interface Props {
   channels: Channel[];
-  onChanged: () => void;
-}
-
-interface Health {
-  ok: boolean;
-  status?: string;
-  is_admin?: boolean;
-  can_post?: boolean;
-  can_delete?: boolean;
-  error?: string;
 }
 
 const emptyForm = { name: '', chat_id: '', username: '', note: '' };
 
-export function ChannelsTab({ channels, onChanged }: Props) {
+export function ChannelsTab({ channels }: Props) {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<Record<number, Health | 'loading'>>({});
+
+  const createM = useCreateChannel();
+  const updateM = useUpdateChannel();
+  const deleteM = useDeleteChannel();
+  const testM = useTestChannel();
+  const healthM = useCheckChannelHealth();
 
   function resetForm() {
     setForm(emptyForm);
@@ -47,14 +46,13 @@ export function ChannelsTab({ channels, onChanged }: Props) {
     setBusy(true);
     try {
       if (editingId) {
-        await api.put(`/api/channels/${editingId}`, form);
+        await updateM.mutateAsync({ id: editingId, ...form });
         toast.success('Kanal güncellendi');
       } else {
-        await api.post('/api/channels', form);
+        await createM.mutateAsync(form);
         toast.success('Kanal eklendi');
       }
       resetForm();
-      onChanged();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -65,10 +63,9 @@ export function ChannelsTab({ channels, onChanged }: Props) {
   async function remove(id: number) {
     if (!confirm('Bu kanalı silmek istediğine emin misin? Bağlı tüm gönderiler silinir.')) return;
     try {
-      await api.del(`/api/channels/${id}`);
+      await deleteM.mutateAsync(id);
       toast.success('Silindi');
       if (editingId === id) resetForm();
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -76,7 +73,7 @@ export function ChannelsTab({ channels, onChanged }: Props) {
 
   async function test(id: number) {
     try {
-      await api.post(`/api/channels/${id}/test`);
+      await testM.mutateAsync(id);
       toast.success('Test mesajı gönderildi ✅');
     } catch (e: any) {
       toast.error(e.message);
@@ -86,7 +83,7 @@ export function ChannelsTab({ channels, onChanged }: Props) {
   async function checkHealth(id: number) {
     setHealth((h) => ({ ...h, [id]: 'loading' }));
     try {
-      const res = await api.get<Health>(`/api/channels/${id}/health`);
+      const res = await healthM.mutateAsync(id);
       setHealth((h) => ({ ...h, [id]: res }));
     } catch (e: any) {
       setHealth((h) => ({ ...h, [id]: { ok: false, error: e.message } }));

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts';
@@ -8,8 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Eye, Heart, TrendingUp, RefreshCw, Send, Loader2, AlertCircle, Tv, Trash2, FileText, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
-import type { DashboardStats } from '@/lib/types';
+import { useStats, useSetViews } from '@/hooks/useStats';
 import { formatDateTime } from '@/lib/utils';
 
 function StatCard({
@@ -29,33 +28,24 @@ function StatCard({
 }
 
 export function StatsTab() {
-  const [data, setData] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading, isError, error, refetch } = useStats();
 
-  async function load() {
-    setLoading(true);
-    try {
-      const r = await api.get<DashboardStats>('/api/stats/dashboard');
-      setData(r);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (isError) {
+    return (
+      <div className="py-12 text-center text-sm text-destructive">
+        İstatistikler yüklenemedi: {(error as Error)?.message}
+      </div>
+    );
+  }
   if (!data) return null;
+  const load = () => refetch();
 
   // Birleşik 7 günlük seri (post + view + reaction)
   const days: Record<string, { day: string; posts: number; views: number; reactions: number }> = {};
@@ -251,10 +241,11 @@ function ManualViewsInput({
 }: { postId: number; initialViews: number; onUpdated: () => void }) {
   const [v, setV] = useState(String(initialViews || 0));
   const [editing, setEditing] = useState(false);
+  const setViews = useSetViews();
 
   async function save() {
     try {
-      await api.post(`/api/stats/post/${postId}/views`, { views: Number(v) });
+      await setViews.mutateAsync({ id: postId, views: Number(v) });
       toast.success('Güncellendi');
       setEditing(false);
       onUpdated();

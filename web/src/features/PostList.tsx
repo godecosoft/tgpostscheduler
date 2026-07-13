@@ -3,13 +3,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Send, Trash2, Repeat, BellOff, AlertTriangle, Eye, Heart, Clock, Layers, Film, Image as ImageIcon, FileText, Sparkles, RefreshCw, RotateCcw, Pencil, Shuffle, Pause, Play, Hash, CalendarX } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/utils';
 import type { Post } from '@/lib/types';
+import {
+  useSendNow, useRetryPost, useDeletePost, usePausePost, useResumePost,
+} from '@/hooks/usePosts';
 
 interface Props {
   posts: Post[];
-  onChanged: () => void;
   onEdit?: (post: Post) => void;
   showSendNow?: boolean;
   emptyMessage?: string;
@@ -42,12 +43,17 @@ function mediaIcon(type: string | null | undefined) {
   );
 }
 
-export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }: Props) {
+export function PostList({ posts, onEdit, showSendNow, emptyMessage }: Props) {
+  const sendNowM = useSendNow();
+  const retryM = useRetryPost();
+  const deleteM = useDeletePost();
+  const pauseM = usePausePost();
+  const resumeM = useResumePost();
+
   async function sendNow(id: number) {
     try {
-      await api.post(`/api/posts/${id}/send-now`);
+      await sendNowM.mutateAsync(id);
       toast.success('Gönderildi');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -55,9 +61,8 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
 
   async function retry(id: number) {
     try {
-      await api.post(`/api/posts/${id}/retry`);
+      await retryM.mutateAsync(id);
       toast.success('Tekrar denemeye alındı (1 dk içinde gönderilir)');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -66,9 +71,8 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
   async function remove(id: number) {
     if (!confirm('Bu gönderiyi silmek istediğine emin misin?')) return;
     try {
-      await api.del(`/api/posts/${id}`);
+      await deleteM.mutateAsync(id);
       toast.success('Silindi');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -76,9 +80,8 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
 
   async function pause(id: number) {
     try {
-      await api.post(`/api/posts/${id}/pause`);
+      await pauseM.mutateAsync(id);
       toast.success('Seri duraklatıldı');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -86,9 +89,8 @@ export function PostList({ posts, onChanged, onEdit, showSendNow, emptyMessage }
 
   async function resume(id: number) {
     try {
-      await api.post(`/api/posts/${id}/resume`);
+      await resumeM.mutateAsync(id);
       toast.success('Seri devam ediyor');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }

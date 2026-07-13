@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Radio, LogOut, PencilLine, CalendarDays, History, Tv, BookOpen, BarChart3, Calendar as CalendarIcon, KeyRound, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
-import type { Channel, Post, Template } from '@/lib/types';
+import type { Post } from '@/lib/types';
+import { useMe, useLogout } from '@/hooks/useAuth';
+import { usePosts, useRetryPost } from '@/hooks/usePosts';
+import { useChannels } from '@/hooks/useChannels';
+import { useTemplates } from '@/hooks/useTemplates';
 import { ComposeTab } from '@/features/ComposeTab';
 import { PostList } from '@/features/PostList';
 import { ChannelsTab } from '@/features/ChannelsTab';
@@ -17,11 +20,14 @@ import { PasswordDialog } from '@/features/PasswordDialog';
 
 export function DashboardPage() {
   const nav = useNavigate();
-  const [me, setMe] = useState<{ username: string; default_password?: boolean } | null>(null);
+  const { data: me } = useMe();
+  const { data: channels = [] } = useChannels();
+  const { data: templates = [] } = useTemplates();
+  const { data: posts = [] } = usePosts();
+  const logout = useLogout();
+  const retryPost = useRetryPost();
+
   const [showPw, setShowPw] = useState(false);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [posts, setPosts] = useState<Post[]>([]);
   const [historyFilter, setHistoryFilter] = useState<'all' | 'sent' | 'failed'>('all');
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [activeTab, setActiveTab] = useState('compose');
@@ -34,35 +40,8 @@ export function DashboardPage() {
     setEditingPost(null);
   }
 
-  const refresh = useCallback(async () => {
-    try {
-      const [c, t, p] = await Promise.all([
-        api.get<Channel[]>('/api/channels'),
-        api.get<Template[]>('/api/templates'),
-        api.get<Post[]>('/api/posts'),
-      ]);
-      setChannels(c);
-      setTemplates(t);
-      setPosts(p);
-    } catch (e: any) {
-      toast.error('Veri yüklenemedi: ' + e.message);
-    }
-  }, []);
-
-  const loadMe = useCallback(() => {
-    api
-      .get<{ username: string; default_password?: boolean }>('/api/auth/me')
-      .then(setMe)
-      .catch(() => nav('/login'));
-  }, [nav]);
-
-  useEffect(() => {
-    loadMe();
-    refresh();
-  }, [loadMe, refresh]);
-
-  async function logout() {
-    await api.post('/api/auth/logout');
+  async function handleLogout() {
+    await logout.mutateAsync();
     nav('/login');
   }
 
@@ -76,6 +55,16 @@ export function DashboardPage() {
     if (historyFilter === 'all') return done;
     return done.filter((p) => p.status === historyFilter);
   }, [posts, historyFilter]);
+
+  async function retryAllFailed() {
+    if (!confirm(`${history.length} başarısız postu yeniden denemeye al?`)) return;
+    try {
+      await Promise.all(history.map((p) => retryPost.mutateAsync(p.id)));
+      toast.success(`${history.length} post tekrar denemeye alındı`);
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
 
   return (
     <div className="min-h-screen">
@@ -98,7 +87,7 @@ export function DashboardPage() {
               <KeyRound className="mr-1.5 h-3.5 w-3.5" />
               Parola
             </Button>
-            <Button variant="ghost" size="sm" onClick={logout}>
+            <Button variant="ghost" size="sm" onClick={handleLogout}>
               <LogOut className="mr-1.5 h-3.5 w-3.5" />
               Çıkış
             </Button>
@@ -119,7 +108,7 @@ export function DashboardPage() {
         )}
       </header>
 
-      {showPw && <PasswordDialog onClose={() => setShowPw(false)} onChanged={loadMe} />}
+      {showPw && <PasswordDialog onClose={() => setShowPw(false)} />}
 
       <main className="container py-6">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -174,7 +163,6 @@ export function DashboardPage() {
               <ComposeTab
                 channels={channels}
                 templates={templates}
-                onSaved={refresh}
                 editingPost={editingPost}
                 onCancelEdit={cancelEdit}
               />
@@ -182,7 +170,7 @@ export function DashboardPage() {
           </TabsContent>
 
           <TabsContent value="calendar">
-            <CalendarTab posts={posts} onChanged={refresh} onEdit={startEdit} />
+            <CalendarTab posts={posts} onEdit={startEdit} />
           </TabsContent>
 
           <TabsContent value="stats">
@@ -192,7 +180,6 @@ export function DashboardPage() {
           <TabsContent value="schedule">
             <PostList
               posts={pending}
-              onChanged={refresh}
               onEdit={startEdit}
               showSendNow
               emptyMessage="Bekleyen gönderi yok."
@@ -212,37 +199,20 @@ export function DashboardPage() {
                 </Button>
               ))}
               {historyFilter === 'failed' && history.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={async () => {
-                    if (!confirm(`${history.length} başarısız postu yeniden denemeye al?`)) return;
-                    try {
-                      await Promise.all(
-                        history.map((p) =>
-                          fetch(`/api/posts/${p.id}/retry`, { method: 'POST', credentials: 'include' }),
-                        ),
-                      );
-                      toast.success(`${history.length} post tekrar denemeye alındı`);
-                      refresh();
-                    } catch (e: any) {
-                      toast.error(e.message);
-                    }
-                  }}
-                >
+                <Button size="sm" variant="secondary" onClick={retryAllFailed}>
                   🔄 Hepsini Tekrar Dene
                 </Button>
               )}
             </div>
-            <PostList posts={history} onChanged={refresh} onEdit={startEdit} emptyMessage="Henüz gönderim yok." />
+            <PostList posts={history} onEdit={startEdit} emptyMessage="Henüz gönderim yok." />
           </TabsContent>
 
           <TabsContent value="channels">
-            <ChannelsTab channels={channels} onChanged={refresh} />
+            <ChannelsTab channels={channels} />
           </TabsContent>
 
           <TabsContent value="templates">
-            <TemplatesTab templates={templates} channels={channels} onChanged={refresh} />
+            <TemplatesTab templates={templates} channels={channels} />
           </TabsContent>
         </Tabs>
       </main>

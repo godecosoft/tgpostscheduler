@@ -25,6 +25,15 @@ export function useCreateTemplate() {
   });
 }
 
+export function useUpdateTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: TemplateInput & { id: number }) =>
+      api.put(`/api/templates/${id}`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.templates() }),
+  });
+}
+
 export function useDeleteTemplate() {
   const qc = useQueryClient();
   return useMutation({

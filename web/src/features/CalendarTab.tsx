@@ -4,13 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
 import { nextFirings } from '@/lib/schedule';
 import type { Post } from '@/lib/types';
+import { useSendNow, useRetryPost, useDeletePost } from '@/hooks/usePosts';
 
 interface Props {
   posts: Post[];
-  onChanged: () => void;
   onEdit?: (post: Post) => void;
 }
 
@@ -36,7 +35,7 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
-export function CalendarTab({ posts, onChanged, onEdit }: Props) {
+export function CalendarTab({ posts, onEdit }: Props) {
   const [cursor, setCursor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
@@ -215,7 +214,6 @@ export function CalendarTab({ posts, onChanged, onEdit }: Props) {
                   key={`${e.post.id}-${i}`}
                   evt={e}
                   onEdit={onEdit}
-                  onChanged={onChanged}
                 />
               ))}
             </div>
@@ -229,21 +227,21 @@ export function CalendarTab({ posts, onChanged, onEdit }: Props) {
 function DayEventCard({
   evt,
   onEdit,
-  onChanged,
 }: {
   evt: CalendarEvent;
   onEdit?: (p: Post) => void;
-  onChanged: () => void;
 }) {
   const { post: p, date, projected } = evt;
   const time = date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+  const sendNowM = useSendNow();
+  const retryM = useRetryPost();
+  const deleteM = useDeletePost();
 
   async function remove() {
     if (!confirm('Bu postu sil?')) return;
     try {
-      await api.del(`/api/posts/${p.id}`);
+      await deleteM.mutateAsync(p.id);
       toast.success('Silindi');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -251,9 +249,8 @@ function DayEventCard({
 
   async function sendNow() {
     try {
-      await api.post(`/api/posts/${p.id}/send-now`);
+      await sendNowM.mutateAsync(p.id);
       toast.success('Gönderildi');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -261,9 +258,8 @@ function DayEventCard({
 
   async function retry() {
     try {
-      await api.post(`/api/posts/${p.id}/retry`);
+      await retryM.mutateAsync(p.id);
       toast.success('Tekrar denemeye alındı');
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }

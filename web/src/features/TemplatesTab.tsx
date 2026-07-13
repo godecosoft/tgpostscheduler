@@ -14,13 +14,12 @@ import {
 } from '@/components/ui/select';
 import { Trash2, Pencil, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { useCreateTemplate, useUpdateTemplate, useDeleteTemplate } from '@/hooks/useTemplates';
 import type { Template, Channel, Button as BtnType } from '@/lib/types';
 
 interface Props {
   templates: Template[];
   channels: Channel[];
-  onChanged: () => void;
 }
 
 const GENERAL = '__general__';
@@ -43,11 +42,15 @@ function parseButtons(raw: string | null): BtnType[] {
   return [];
 }
 
-export function TemplatesTab({ templates, channels, onChanged }: Props) {
+export function TemplatesTab({ templates, channels }: Props) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [channelId, setChannelId] = useState<string>(GENERAL);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const createM = useCreateTemplate();
+  const updateM = useUpdateTemplate();
+  const deleteM = useDeleteTemplate();
 
   function resetForm() {
     setForm(emptyForm);
@@ -75,14 +78,13 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
     };
     try {
       if (editingId) {
-        await api.put(`/api/templates/${editingId}`, payload);
+        await updateM.mutateAsync({ id: editingId, ...payload });
         toast.success('Şablon güncellendi');
       } else {
-        await api.post('/api/templates', payload);
+        await createM.mutateAsync(payload);
         toast.success('Şablon eklendi');
       }
       resetForm();
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -93,10 +95,9 @@ export function TemplatesTab({ templates, channels, onChanged }: Props) {
   async function remove(id: number) {
     if (!confirm('Şablonu sil?')) return;
     try {
-      await api.del(`/api/templates/${id}`);
+      await deleteM.mutateAsync(id);
       toast.success('Silindi');
       if (editingId === id) resetForm();
-      onChanged();
     } catch (e: any) {
       toast.error(e.message);
     }
