@@ -214,7 +214,7 @@ export function PostList({ posts, onEdit, showSendNow, emptyMessage, filterable,
                     )}
                     {p.pool_id && (
                       <Badge variant="secondary" className="gap-1">
-                        {p.pool_rotation === 'random' ? '🎲' : '🔁'} havuz
+                        {p.pool_rotation === 'random' ? '🎲' : p.pool_rotation === 'shuffle' ? '🔀' : '🔁'} havuz
                       </Badge>
                     )}
                     {p.delete_at && p.status === 'sent' && (

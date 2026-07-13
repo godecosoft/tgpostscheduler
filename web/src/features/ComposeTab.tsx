@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Bold, Italic, Underline, Strikethrough, Code, EyeOff, Link as LinkIcon,
-  ImageIcon, Plus, Trash2, Send, CalendarClock, Loader2, Sparkles,
+  ImageIcon, Trash2, Send, CalendarClock, Loader2, Sparkles,
   Film, FileText, Layers, Clock, CalendarDays, Repeat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,6 +27,8 @@ import { useCreatePost, useUpdatePost, useSendNow } from '@/hooks/usePosts';
 import { useCreateTemplate } from '@/hooks/useTemplates';
 import { usePools } from '@/hooks/usePools';
 import { useHealth } from '@/hooks/useSystem';
+import { ButtonBuilder } from './compose/ButtonBuilder';
+import { RichTextToolbar } from './compose/RichTextToolbar';
 import { TelegramPreview } from './TelegramPreview';
 
 // Sunucu ve tarayıcı saat dilimini gösterir; farklıysa uyarır.
@@ -51,8 +52,6 @@ function TimezoneBadge() {
     </Badge>
   );
 }
-
-const QUICK_EMOJIS = ['🎰', '🎁', '💰', '⚽', '🔥', '✅', '🚀', '💎', '🏆', '🎯', '⚡', '🎊'];
 
 interface Props {
   channels: Channel[];
@@ -333,26 +332,6 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
     else handleMultiUpload(files);
   }
 
-  function addButton() {
-    update('buttons', [...draft.buttons, [{ text: '', url: '' }]]);
-  }
-  function updateButton(rowIdx: number, btnIdx: number, field: 'text' | 'url', value: string) {
-    const next: ButtonGrid = draft.buttons.map((row, ri) =>
-      ri === rowIdx ? row.map((b, bi) => (bi === btnIdx ? { ...b, [field]: value } : b)) : row,
-    );
-    update('buttons', next);
-  }
-  function addButtonToRow(rowIdx: number) {
-    const next = draft.buttons.map((row, ri) => (ri === rowIdx ? [...row, { text: '', url: '' }] : row));
-    update('buttons', next);
-  }
-  function removeButton(rowIdx: number, btnIdx: number) {
-    const next = draft.buttons
-      .map((row, ri) => (ri === rowIdx ? row.filter((_, bi) => bi !== btnIdx) : row))
-      .filter((row) => row.length > 0);
-    update('buttons', next);
-  }
-
   function applyTemplate(id: string) {
     const t = templates.find((t) => String(t.id) === id);
     if (!t) return;
@@ -496,15 +475,6 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
       setBusy(false);
     }
   }
-
-  const formatBtns = [
-    { tag: 'b', icon: Bold, title: 'Kalın' },
-    { tag: 'i', icon: Italic, title: 'İtalik' },
-    { tag: 'u', icon: Underline, title: 'Altı çizili' },
-    { tag: 's', icon: Strikethrough, title: 'Üstü çizili' },
-    { tag: 'code', icon: Code, title: 'Kod' },
-    { tag: 'tg-spoiler', icon: EyeOff, title: 'Spoiler' },
-  ];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_minmax(360px,400px)]">
@@ -750,25 +720,12 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
 
           <div className="space-y-2">
             <Label>Mesaj Metni / Caption</Label>
-            <div className="flex flex-wrap items-center gap-1 rounded-md border bg-muted/40 p-1">
-              {formatBtns.map(({ tag, icon: Icon, title }) => (
-                <Button key={tag} type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" title={title} onClick={() => wrap(tag)}>
-                  <Icon className="h-3.5 w-3.5" />
-                </Button>
-              ))}
-              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0" title="Link" onClick={insertLink}>
-                <LinkIcon className="h-3.5 w-3.5" />
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-purple-400" title="Premium Emoji" onClick={insertPremiumEmoji}>
-                <Sparkles className="h-3.5 w-3.5" />
-              </Button>
-              <Separator orientation="vertical" className="mx-1 h-5" />
-              {QUICK_EMOJIS.map((e) => (
-                <Button key={e} type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-base" onClick={() => insertEmoji(e)}>
-                  {e}
-                </Button>
-              ))}
-            </div>
+            <RichTextToolbar
+              onWrap={wrap}
+              onLink={insertLink}
+              onPremiumEmoji={insertPremiumEmoji}
+              onEmoji={insertEmoji}
+            />
             <Textarea
               ref={textRef}
               value={draft.text}
@@ -802,32 +759,7 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
             })()}
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Inline Butonlar</Label>
-              <Button type="button" variant="outline" size="sm" onClick={addButton}>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Satır Ekle
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {draft.buttons.map((row, ri) => (
-                <div key={ri} className="rounded-md border bg-muted/30 p-2">
-                  {row.map((btn, bi) => (
-                    <div key={bi} className="mb-1 flex gap-2 last:mb-0">
-                      <Input placeholder="Buton metni" value={btn.text} onChange={(e) => updateButton(ri, bi, 'text', e.target.value)} />
-                      <Input placeholder="https://example.com" value={btn.url} onChange={(e) => updateButton(ri, bi, 'url', e.target.value)} />
-                      <Button type="button" variant="ghost" size="icon" onClick={() => removeButton(ri, bi)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-xs" onClick={() => addButtonToRow(ri)}>
-                    + Aynı satıra buton
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ButtonBuilder value={draft.buttons} onChange={(v) => update('buttons', v)} />
 
           {/* --- ZAMANLAMA --- */}
           <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -1125,8 +1057,8 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
                           ))}
                         </SelectContent>
                       </Select>
-                      <div className="flex gap-1.5">
-                        {(['sequential', 'random'] as const).map((r) => (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(['sequential', 'random', 'shuffle'] as const).map((r) => (
                           <Button
                             key={r}
                             type="button"
@@ -1135,13 +1067,18 @@ export function ComposeTab({ channels, templates, editingPost, presetDate, onCan
                             className="h-7 text-[11px]"
                             onClick={() => update('pool_rotation', r)}
                           >
-                            {r === 'sequential' ? '🔁 Sırayla' : '🎲 Rastgele'}
+                            {r === 'sequential' ? '🔁 Sırayla' : r === 'random' ? '🎲 Rastgele' : '🔀 Karışık (tekrarsız)'}
                           </Button>
                         ))}
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        Her gönderimde havuzdan {draft.pool_rotation === 'random' ? 'rastgele' : 'sıradaki'} içerik
-                        atılır. Yukarıdaki metin/medya alanları yok sayılır.
+                        {draft.pool_rotation === 'sequential' &&
+                          'Havuzdaki sıraya göre birer birer atar, sona gelince başa döner.'}
+                        {draft.pool_rotation === 'random' &&
+                          'Her seferinde rastgele seçer — aynı içerik peş peşe/yakın çıkabilir.'}
+                        {draft.pool_rotation === 'shuffle' &&
+                          'Rastgele ama tekrarsız: tüm öğeler bir kez atılmadan hiçbiri tekrar etmez, tur bitince yeniden karışır.'}
+                        {' '}Yukarıdaki metin/medya alanları yok sayılır.
                       </p>
                     </div>
                   )

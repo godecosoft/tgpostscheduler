@@ -127,7 +127,9 @@ db.exec(`
 
 // Bir tekrarlı postu bir havuza bağla
 safeAddColumn('posts', 'pool_id', 'INTEGER');
-safeAddColumn('posts', 'pool_rotation', "TEXT"); // sequential | random
+safeAddColumn('posts', 'pool_rotation', "TEXT"); // sequential | random | shuffle
+// shuffle (rastgele+tekrarsız) için mevcut turun karışık sırası (id JSON dizisi)
+safeAddColumn('pools', 'shuffle_order', 'TEXT');
 
 // Denetim günlüğü (audit log) — kim ne yaptı
 db.exec(`

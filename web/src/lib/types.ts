@@ -89,7 +89,7 @@ export interface Template {
   created_at: string;
 }
 
-export type PoolRotation = 'sequential' | 'random';
+export type PoolRotation = 'sequential' | 'random' | 'shuffle';
 
 export interface PoolItem {
   id: number;
