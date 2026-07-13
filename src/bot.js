@@ -39,23 +39,14 @@ function init() {
     const newStatus = update.new_chat_member?.status;
     if (!['channel', 'supergroup', 'group'].includes(chat.type)) return;
     if (!['administrator', 'member'].includes(newStatus)) return;
+    upsertChannel(chat);
+  });
 
-    const existing = db.prepare('SELECT id FROM channels WHERE chat_id = ?').get(String(chat.id));
-    if (existing) {
-      db.prepare('UPDATE channels SET name = ?, username = ? WHERE chat_id = ?').run(
-        chat.title || chat.username || String(chat.id),
-        chat.username || null,
-        String(chat.id),
-      );
-    } else {
-      db.prepare('INSERT INTO channels (name, chat_id, username, note) VALUES (?, ?, ?, ?)').run(
-        chat.title || chat.username || String(chat.id),
-        String(chat.id),
-        chat.username || null,
-        'Bot kanala eklendiğinde otomatik kaydedildi',
-      );
-      console.log(`[bot] Yeni kanal otomatik kaydedildi: ${chat.title} (${chat.id})`);
-    }
+  // Kanala düşen her post ile de kaydet — my_chat_member kaçırılsa bile
+  // (bot deploy sırasında offline'ken admin yapıldıysa event gelmez).
+  // Kanala tek bir mesaj atmak kaydı garantiye alır.
+  bot.on('channel_post', (msg) => {
+    if (msg.chat?.type === 'channel') upsertChannel(msg.chat);
   });
 
   // /start ve /id komutları — bulunduğun chat'in id'sini ver
@@ -200,6 +191,26 @@ function init() {
   });
 
   return bot;
+}
+
+// Kanalı DB'ye ekle ya da adını/username'ini güncelle (idempotent)
+function upsertChannel(chat) {
+  const existing = db.prepare('SELECT id FROM channels WHERE chat_id = ?').get(String(chat.id));
+  if (existing) {
+    db.prepare('UPDATE channels SET name = ?, username = ? WHERE chat_id = ?').run(
+      chat.title || chat.username || String(chat.id),
+      chat.username || null,
+      String(chat.id),
+    );
+  } else {
+    db.prepare('INSERT INTO channels (name, chat_id, username, note) VALUES (?, ?, ?, ?)').run(
+      chat.title || chat.username || String(chat.id),
+      String(chat.id),
+      chat.username || null,
+      'Bot kanala eklendiğinde otomatik kaydedildi',
+    );
+    console.log(`[bot] Yeni kanal otomatik kaydedildi: ${chat.title} (${chat.id})`);
+  }
 }
 
 function handleReactionUpdate(update) {
