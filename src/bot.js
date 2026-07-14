@@ -86,74 +86,84 @@ function init() {
     // Bot API'nin eski (forward_from_chat) ve yeni (forward_origin) alanlarını kontrol et
     const fwdChat = msg.forward_from_chat || msg.forward_origin?.chat || null;
     const fwdUser = msg.forward_from || msg.forward_origin?.sender_user || null;
+    const isForwarded = !!(
+      msg.forward_origin || msg.forward_date || msg.forward_from || msg.forward_from_chat || msg.forward_sender_name
+    );
 
-    // ÖNCELİK: iletilen mesaj bir kanal/gruptan geldiyse HER ZAMAN önce kanal ID'sini ver.
-    // (Emoji kontrolünden önce olmalı — yoksa premium emoji içeren kanal postu
-    //  iletildiğinde bot kanal ID yerine emoji ID gösterirdi.)
+    // Sadece özel sohbette yanıt ver (grup/kanalda spam yapma)
+    if (msg.chat.type !== 'private') return;
+
+    // Emoji ve kanal-ID tespitini ÇATIŞTIRMA — ikisi de varsa ikisini birden göster.
+    const sections = [];
+
+    // 1) Premium emoji ID'leri (custom emoji içeren HER mesajda)
+    if (customEmojis.length > 0) {
+      sections.push(
+        [
+          `✨ <b>${customEmojis.length} adet Premium Emoji bulundu</b>`,
+          '',
+          ...customEmojis.map(
+            (ce, i) =>
+              `${i + 1}. ${ce.fallback}  <code>${ce.id}</code>\n` +
+              `   <code>&lt;tg-emoji emoji-id="${ce.id}"&gt;${escapeHtml(ce.fallback)}&lt;/tg-emoji&gt;</code>`,
+          ),
+          '',
+          '👉 Web panelde bu <code>emoji-id</code> değerini kullan.',
+          '<i>Not: Premium olmayanlar fallback (standart) emojiyi görür.</i>',
+        ].join('\n'),
+      );
+    }
+
+    // 2) İletilen kaynak bir kanal/grup ise chat_id
     if (fwdChat) {
-      const lines = [
-        '✅ <b>İletilen mesajın kaynağı bulundu</b>',
-        '',
-        `📡 Chat ID: <code>${fwdChat.id}</code>`,
-        `Tür: <code>${fwdChat.type}</code>`,
-        fwdChat.title ? `İsim: ${escapeHtml(fwdChat.title)}` : '',
-        fwdChat.username ? `Kullanıcı adı: @${fwdChat.username}` : '',
-        '',
-        '👉 Bu ID\'yi web panelde "Kanallar → Yeni Kanal" ekranına yapıştırabilirsin.',
-        '',
-        '<i>Not: Botu da kanalın yöneticisi olarak eklemeyi unutma — yoksa mesaj gönderemez.</i>',
-        customEmojis.length > 0
-          ? `\n✨ <i>Bu mesajda ${customEmojis.length} premium emoji de var. ID'leri için mesajı buraya (forward değil) düz kopyalayıp gönder.</i>`
-          : '',
-      ].filter(Boolean).join('\n');
-      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
+      sections.push(
+        [
+          '✅ <b>İletilen mesajın kaynağı</b>',
+          `📡 Chat ID: <code>${fwdChat.id}</code>`,
+          `Tür: <code>${fwdChat.type}</code>`,
+          fwdChat.title ? `İsim: ${escapeHtml(fwdChat.title)}` : '',
+          fwdChat.username ? `Kullanıcı adı: @${fwdChat.username}` : '',
+          '',
+          '👉 Bu ID\'yi "Kanallar → Yeni Kanal" ekranına yapıştır. Botu kanala <b>admin</b> eklemeyi unutma.',
+        ].filter(Boolean).join('\n'),
+      );
+    }
+
+    if (sections.length > 0) {
+      bot.sendMessage(msg.chat.id, sections.join('\n\n➖➖➖➖➖\n\n'), { parse_mode: 'HTML' });
       return;
     }
 
-    if (customEmojis.length > 0 && msg.chat.type === 'private') {
-      const lines = [
-        `✨ <b>${customEmojis.length} adet Premium Emoji bulundu</b>`,
-        '',
-        ...customEmojis.map(
-          (ce, i) =>
-            `${i + 1}. ${ce.fallback}  <code>${ce.id}</code>\n` +
-            `   <code>&lt;tg-emoji emoji-id="${ce.id}"&gt;${escapeHtml(ce.fallback)}&lt;/tg-emoji&gt;</code>`,
-        ),
-        '',
-        '👉 Web panelde "Premium Emoji Ekle" butonuna tıklayıp ID\'yi yapıştır.',
-        '<i>Not: Premium olmayan kullanıcılar fallback (parantez içindeki standart emoji)yi görür.</i>',
-      ].join('\n');
-      bot.sendMessage(msg.chat.id, lines, { parse_mode: 'HTML' });
-      return;
-    }
-
-    if (fwdUser && msg.chat.type === 'private') {
+    // 3) İletilen ama kaynağı kullanıcı
+    if (fwdUser) {
       bot.sendMessage(
         msg.chat.id,
-        `👤 İletilen mesaj bir kullanıcıdan: <code>${fwdUser.id}</code>\n\nKanal chat_id öğrenmek istiyorsan, kanaldaki bir mesajı bana ilet.`,
+        `👤 İletilen mesaj bir kullanıcıdan: <code>${fwdUser.id}</code>\n\n` +
+          'Kanal ID için kanaldaki bir mesajı ilet; emoji ID için içinde <b>premium emoji</b> olan bir mesaj gönder/ilet.',
         { parse_mode: 'HTML' },
       );
       return;
     }
 
-    // İletilen ama kaynağı GİZLİ mesaj (kanalın gizlilik/"içeriği koru" ayarı açık).
-    // forward_origin var ama chat/sender_user yok → chat_id veremeyiz, açıkça söyle.
-    const isForwarded = !!(msg.forward_origin || msg.forward_date || msg.forward_sender_name);
-    if (isForwarded && msg.chat.type === 'private') {
+    // 4) İletilen ama kaynağı GİZLİ (gönderen adı gizli / içerik korumalı)
+    if (isForwarded) {
       bot.sendMessage(
         msg.chat.id,
-        '⚠️ Bu iletilen mesajın kaynağı <b>gizli</b> (kanal ayarlarında gönderen adı gizleniyor ya da içerik korumalı), bu yüzden chat_id okuyamıyorum.\n\n' +
-          'Çözüm: Botu kanala <b>yönetici</b> olarak ekle — kanal otomatik olarak kaydedilir ve ID gerekmeden çalışır.',
+        '⚠️ Bu iletilen mesajın kaynağı <b>gizli</b> (gönderen adı gizleniyor ya da içerik korumalı), chat_id okuyamıyorum.\n\n' +
+          'Çözüm: Botu kanala <b>yönetici</b> olarak ekle — kanal otomatik kaydedilir.',
         { parse_mode: 'HTML' },
       );
       return;
     }
 
-    // Özel sohbette herhangi bir mesaj geldiyse (forward değil) yardımcı yönlendirme
-    if (msg.chat.type === 'private' && msg.text && !msg.text.startsWith('/')) {
+    // 5) Düz mesaj → ne yapabileceğini anlat
+    if (msg.text && !msg.text.startsWith('/')) {
       bot.sendMessage(
         msg.chat.id,
-        '💡 Kanal ID\'si öğrenmek için kanalından <b>bir mesajı bana ilet (forward)</b>.\nBulunduğun sohbetin ID\'sini görmek için /id yaz.',
+        '💡 <b>Sana şunları verebilirim:</b>\n' +
+          '• <b>Kanal ID</b> — kanaldan bir mesajı bana <b>ilet (forward)</b>.\n' +
+          '• <b>Premium emoji ID</b> — içinde <b>custom (premium) emoji</b> olan bir mesajı gönder ya da ilet.\n\n' +
+          'Bulunduğun sohbetin ID\'si için /id yaz.',
         { parse_mode: 'HTML' },
       );
     }
