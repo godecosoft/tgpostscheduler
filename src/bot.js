@@ -655,6 +655,18 @@ function resolveMediaPath(p) {
 }
 
 async function sendPost(post, channel) {
+  // Premium (custom) emoji içeren postları, bot yerine Premium kullanıcı hesabıyla
+  // (userbot / MTProto) gönder — bot API kanala premium emoji basamıyor.
+  const userbot = require('./userbot');
+  if (userbot.shouldRoute(post)) {
+    try {
+      return await userbot.sendViaUserbot(post, channel);
+    } catch (e) {
+      console.error('[bot] userbot gönderimi başarısız, bot API ile deneniyor (emoji fallback olabilir):', e.message);
+      // Aşağıdaki bot yoluna düş — post en azından gider
+    }
+  }
+
   if (!bot) throw new Error('Bot başlatılmamış (TELEGRAM_BOT_TOKEN eksik)');
 
   // Telegram'dan kopyalanan post — copyMessage ile birebir kopyalanır.

@@ -42,6 +42,10 @@ if (isProd && !process.env.ADMIN_PASSWORD) {
 ensureAdmin();
 seedDefaults();
 bot.init();
+// Userbot (Premium hesap / MTProto) — premium emojili postlar için. Yapılandırılmamışsa sessizce atlar.
+require('./userbot')
+  .initUserbot()
+  .catch((e) => console.error('[userbot] init hata:', e.message));
 scheduler.start();
 
 // Railway / proxy arkasında HTTPS doğru algılanması için
