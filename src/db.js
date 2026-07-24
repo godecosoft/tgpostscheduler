@@ -128,6 +128,11 @@ db.exec(`
 // Bir tekrarlı postu bir havuza bağla
 safeAddColumn('posts', 'pool_id', 'INTEGER');
 safeAddColumn('posts', 'pool_rotation', "TEXT"); // sequential | random | shuffle
+
+// Telegram'dan kopyalanan postlar (premium emoji korunur) — copyMessage kaynağı.
+// media_type='copy' olan postlar sendMessage yerine copyMessage ile gönderilir.
+safeAddColumn('posts', 'source_chat_id', 'TEXT');       // copyMessage from_chat_id
+safeAddColumn('posts', 'source_message_id', 'INTEGER'); // copyMessage message_id
 // shuffle (rastgele+tekrarsız) için mevcut turun karışık sırası (id JSON dizisi)
 safeAddColumn('pools', 'shuffle_order', 'TEXT');
 
